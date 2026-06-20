@@ -4,33 +4,21 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { App, Button } from "antd";
 
-import { createModelChannel, encodeChannelModel, useConfigStore, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { createModelChannel, encodeChannelModel, modelMatchesCapability, useConfigStore, type AiConfig, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { IS_V2API_MANAGED, V2API_BASE_URL } from "@/constant/env";
 import { exchangeCanvasHandoff } from "@/services/api/handoff";
 
-const capabilityPatterns: Record<ModelCapability, RegExp> = {
-    image: /image|gpt-image|dall-e|dalle|imagen|flux|sdxl|stable-diffusion|midjourney/i,
-    video: /video|sora|veo|kling|wan|hailuo|seedance/i,
-    audio: /audio|tts|speech|voice|music|sound/i,
-    text: /$^/,
-};
-
-function modelCapability(model: string): ModelCapability {
-    if (capabilityPatterns.image.test(model)) return "image";
-    if (capabilityPatterns.video.test(model)) return "video";
-    if (capabilityPatterns.audio.test(model)) return "audio";
-    return "text";
-}
-
 function encodedModels(channelId: string, models: string[], capability?: ModelCapability) {
-    return models.filter((model) => !capability || modelCapability(model) === capability).map((model) => encodeChannelModel(channelId, model));
+    return models
+        .map((model) => encodeChannelModel(channelId, model))
+        .filter((model) => !capability || modelMatchesCapability(model, capability));
 }
 
-function encodedModelsFromChannels(channels: ReturnType<typeof createModelChannel>[], capability?: ModelCapability) {
+function encodedModelsFromChannels(channels: ModelChannel[], capability?: ModelCapability) {
     return channels.flatMap((channel) => encodedModels(channel.id, channel.models, capability));
 }
 
-function firstEncodedModel(channels: ReturnType<typeof createModelChannel>[], capability: ModelCapability) {
+function firstEncodedModel(channels: ModelChannel[], capability: ModelCapability) {
     return encodedModelsFromChannels(channels, capability)[0] || "";
 }
 

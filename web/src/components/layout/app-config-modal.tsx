@@ -169,6 +169,11 @@ export function AppConfigModal() {
         if (!next.includes(config[group.modelKey])) updateConfig(group.modelKey, next[0] || "");
     };
 
+    const updateDefaultModel = (group: ModelGroup, model: string) => {
+        updateConfig(group.modelKey, model);
+        updateConfig("model", model);
+    };
+
     const testWebdav = async () => {
         if (!webdavReady) {
             message.error("请先填写 WebDAV 地址");
@@ -348,7 +353,7 @@ export function AppConfigModal() {
                                 <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                                     {modelGroups.map((group) => (
                                         <Form.Item key={group.modelKey} label={group.defaultLabel} className="mb-0">
-                                            <ModelPicker config={config} value={config[group.modelKey]} onChange={(model) => updateConfig(group.modelKey, model)} capability={group.capability} fullWidth />
+                                            <ModelPicker config={config} value={config[group.modelKey]} onChange={(model) => updateDefaultModel(group, model)} capability={group.capability} fullWidth />
                                         </Form.Item>
                                     ))}
                                 </div>
