@@ -86,7 +86,11 @@ export function AppConfigModal() {
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
-    const modelOptions = config.models.map((model) => ({ label: modelOptionLabel(config, model), value: model }));
+    const modelOptionsForGroup = (group: ModelGroup) =>
+        filterModelsByCapability(config.models, group.capability).map((model) => ({
+            label: modelOptionLabel(config, model),
+            value: model,
+        }));
     const webdavReady = Boolean(webdav.url.trim());
 
     const saveConfig = (nextConfig: AiConfig) => {
@@ -345,7 +349,7 @@ export function AppConfigModal() {
                                                 maxTagCount="responsive"
                                                 placeholder={config.models.length ? `请选择或输入${group.optionsLabel}` : "先到渠道里填写或拉取模型"}
                                                 value={config[group.modelsKey]}
-                                                options={modelOptions}
+                                                options={modelOptionsForGroup(group)}
                                                 onChange={(models) => updateCapabilityModels(group, models)}
                                             />
                                         </Form.Item>
