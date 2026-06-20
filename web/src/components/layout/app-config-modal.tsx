@@ -163,15 +163,16 @@ export function AppConfigModal() {
         }
     };
 
-    const updateCapabilityModels = (group: ModelGroup, models: string[]) => {
-        const next = uniqueModels(models.map((model) => normalizeModelOptionValue(model, config.channels)).filter(Boolean));
+    const updateCapabilityModels = (group: ModelGroup, models: string[] | string) => {
+        const values = Array.isArray(models) ? models : [models];
+        const next = uniqueModels(values.map((model) => normalizeModelOptionValue(model, config.channels)).filter(Boolean));
         updateConfig(group.modelsKey, next);
         if (!next.includes(config[group.modelKey])) updateConfig(group.modelKey, next[0] || "");
     };
 
     const updateDefaultModel = (group: ModelGroup, model: string) => {
         updateConfig(group.modelKey, model);
-        updateConfig("model", model);
+        if (group.capability === "image") updateConfig("model", model);
     };
 
     const testWebdav = async () => {
@@ -338,7 +339,7 @@ export function AppConfigModal() {
                                     {modelGroups.map((group) => (
                                         <Form.Item key={group.modelsKey} label={group.optionsLabel} className="mb-0">
                                             <Select
-                                                mode={IS_V2API_MANAGED ? undefined : "tags"}
+                                                mode="multiple"
                                                 showSearch
                                                 allowClear={!IS_V2API_MANAGED}
                                                 maxTagCount="responsive"
