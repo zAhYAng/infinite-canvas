@@ -1,10 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useRef } from "react";
-import { App } from "antd";
+import { useEffect, useRef, useState } from "react";
+import { App, Button } from "antd";
 
-import { createModelChannel, encodeChannelModel, useConfigStore, type ModelCapability } from "@/stores/use-config-store";
+import { createModelChannel, encodeChannelModel, useConfigStore, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { IS_V2API_MANAGED, V2API_BASE_URL } from "@/constant/env";
 import { exchangeCanvasHandoff } from "@/services/api/handoff";
 
@@ -35,9 +35,19 @@ function isV2ApiBaseUrl(value: string) {
     return value.trim().replace(/\/+$/, "").toLowerCase() === expected;
 }
 
+function hasManagedV2ApiConfig(config: AiConfig) {
+    return config.channels.some((channel) => isV2ApiBaseUrl(channel.baseUrl) && channel.apiKey.trim() && channel.models.length);
+}
+
+function v2ApiAuthUrl(path: "/sign-in" | "/sign-up") {
+    const baseUrl = V2API_BASE_URL.replace(/\/+$/, "");
+    return `${baseUrl}${path}?redirect=${encodeURIComponent("/canvas-workspace")}`;
+}
+
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
     const handledConfigParams = useRef(false);
+    const [showV2ApiGuide, setShowV2ApiGuide] = useState(false);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const config = useConfigStore((state) => state.config);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
@@ -72,9 +82,11 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
                     updateConfig("videoModel", firstEncodedModel(channel.id, models, "video"));
                     updateConfig("audioModel", firstEncodedModel(channel.id, models, "audio"));
                     updateConfig("textModel", firstEncodedModel(channel.id, models, "text"));
-                    message.success("已连接 v2api 图片工作台");
+                    setShowV2ApiGuide(false);
+                    message.success("已连接 v2api 无限画布");
                 })
                 .catch((error) => {
+                    setShowV2ApiGuide(true);
                     message.error(error instanceof Error ? error.message : "画布登录失败，请从 v2api 重新进入");
                 });
             return;
@@ -96,6 +108,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
                 updateConfig("audioModel", "");
                 updateConfig("textModel", "");
             }
+            setShowV2ApiGuide(!hasManagedV2ApiConfig(config));
             return;
         }
         const baseUrl = searchParams.get("baseUrl") || searchParams.get("baseurl");
@@ -128,5 +141,26 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         message.success("已导入本地直连配置");
     }, [config.channels, message, openConfigDialog, updateConfig]);
 
+    if (showV2ApiGuide) return <V2ApiManagedGuide />;
+
     return <>{children}</>;
+}
+
+function V2ApiManagedGuide() {
+    return (
+        <main className="flex min-h-dvh items-center justify-center bg-background px-4 text-foreground">
+            <section className="w-full max-w-md rounded-lg border border-border/70 bg-card p-6 text-center shadow-sm">
+                <div className="text-lg font-semibold">请从 v2api 进入无限画布</div>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                    当前站点由 v2api 托管模型配置，不能在画布内手动添加渠道。请先登录或注册 v2api，再从主站的“无限画布”入口进入。
+                </p>
+                <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
+                    <Button type="primary" href={v2ApiAuthUrl("/sign-in")}>
+                        登录 v2api
+                    </Button>
+                    <Button href={v2ApiAuthUrl("/sign-up")}>注册账号</Button>
+                </div>
+            </section>
+        </main>
+    );
 }
