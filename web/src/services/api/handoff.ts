@@ -8,6 +8,7 @@ export type CanvasHandoffConfig = {
     apiKey: string;
     apiFormat: ApiCallFormat;
     channel: Omit<ModelChannel, "apiFormat"> & Partial<Pick<ModelChannel, "apiFormat">>;
+    channels?: Array<Omit<ModelChannel, "apiFormat"> & Partial<Pick<ModelChannel, "apiFormat">> & { group?: string }>;
     models: string[];
     user?: {
         id: number;

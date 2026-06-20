@@ -26,8 +26,12 @@ function encodedModels(channelId: string, models: string[], capability?: ModelCa
     return models.filter((model) => !capability || modelCapability(model) === capability).map((model) => encodeChannelModel(channelId, model));
 }
 
-function firstEncodedModel(channelId: string, models: string[], capability: ModelCapability) {
-    return encodedModels(channelId, models, capability)[0] || "";
+function encodedModelsFromChannels(channels: ReturnType<typeof createModelChannel>[], capability?: ModelCapability) {
+    return channels.flatMap((channel) => encodedModels(channel.id, channel.models, capability));
+}
+
+function firstEncodedModel(channels: ReturnType<typeof createModelChannel>[], capability: ModelCapability) {
+    return encodedModelsFromChannels(channels, capability)[0] || "";
 }
 
 function isV2ApiBaseUrl(value: string) {
@@ -62,26 +66,33 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
             window.history.replaceState(null, "", `${window.location.pathname}${searchParams.size ? `?${searchParams}` : ""}${window.location.hash}`);
             void exchangeCanvasHandoff(handoff)
                 .then((handoffConfig) => {
-                    const channel = {
-                        ...handoffConfig.channel,
-                        apiFormat: handoffConfig.apiFormat,
-                    };
-                    const models = handoffConfig.models || channel.models || [];
-                    const allModels = encodedModels(channel.id, models);
-                    updateConfig("channels", [channel]);
-                    updateConfig("baseUrl", handoffConfig.baseUrl);
-                    updateConfig("apiKey", handoffConfig.apiKey);
+                    const rawChannels = handoffConfig.channels?.length ? handoffConfig.channels : [handoffConfig.channel];
+                    const channels = rawChannels.map((channel, index) =>
+                        createModelChannel({
+                            id: channel.id || `v2api-${index + 1}`,
+                            name: channel.name || "v2api",
+                            baseUrl: channel.baseUrl || handoffConfig.baseUrl,
+                            apiKey: channel.apiKey || handoffConfig.apiKey,
+                            apiFormat: channel.apiFormat || handoffConfig.apiFormat,
+                            models: channel.models || [],
+                        }),
+                    );
+                    const firstChannel = channels[0];
+                    const allModels = encodedModelsFromChannels(channels);
+                    updateConfig("channels", channels);
+                    updateConfig("baseUrl", firstChannel?.baseUrl || handoffConfig.baseUrl);
+                    updateConfig("apiKey", firstChannel?.apiKey || handoffConfig.apiKey);
                     updateConfig("apiFormat", handoffConfig.apiFormat);
                     updateConfig("models", allModels);
-                    updateConfig("imageModels", encodedModels(channel.id, models, "image"));
-                    updateConfig("videoModels", encodedModels(channel.id, models, "video"));
-                    updateConfig("audioModels", encodedModels(channel.id, models, "audio"));
-                    updateConfig("textModels", encodedModels(channel.id, models, "text"));
+                    updateConfig("imageModels", encodedModelsFromChannels(channels, "image"));
+                    updateConfig("videoModels", encodedModelsFromChannels(channels, "video"));
+                    updateConfig("audioModels", encodedModelsFromChannels(channels, "audio"));
+                    updateConfig("textModels", encodedModelsFromChannels(channels, "text"));
                     updateConfig("model", allModels[0] || "");
-                    updateConfig("imageModel", firstEncodedModel(channel.id, models, "image"));
-                    updateConfig("videoModel", firstEncodedModel(channel.id, models, "video"));
-                    updateConfig("audioModel", firstEncodedModel(channel.id, models, "audio"));
-                    updateConfig("textModel", firstEncodedModel(channel.id, models, "text"));
+                    updateConfig("imageModel", firstEncodedModel(channels, "image"));
+                    updateConfig("videoModel", firstEncodedModel(channels, "video"));
+                    updateConfig("audioModel", firstEncodedModel(channels, "audio"));
+                    updateConfig("textModel", firstEncodedModel(channels, "text"));
                     setShowV2ApiGuide(false);
                     message.success("已连接 v2api 无限画布");
                 })
