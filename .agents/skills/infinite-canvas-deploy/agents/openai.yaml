@@ -1,0 +1,4 @@
+interface:
+  display_name: "Infinite Canvas Deploy"
+  short_description: "Deploy and operate image.v2api.top on the v2api server."
+  default_prompt: "Deploy or troubleshoot the Infinite Canvas service for image.v2api.top."
