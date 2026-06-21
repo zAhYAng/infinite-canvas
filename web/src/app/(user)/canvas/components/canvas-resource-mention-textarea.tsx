@@ -23,7 +23,7 @@ type Props = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "onChange" | "val
     highlightLabels?: boolean;
 };
 
-export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Props>(function CanvasResourceMentionTextarea({ value, references, onChange, onSubmit, onKeyDown, className, containerClassName, style, highlightLabels = true, ...props }, forwardedRef) {
+export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Props>(function CanvasResourceMentionTextarea({ value, references, onChange, onSubmit, onKeyDown, onPointerDown, onMouseDown, onClick, className, containerClassName, style, highlightLabels = true, ...props }, forwardedRef) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
     const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -85,6 +85,21 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         setHasSelection(Boolean(textarea && textarea.selectionStart !== textarea.selectionEnd));
     };
 
+    const handlePointerDown = (event: PointerEvent<HTMLTextAreaElement>) => {
+        event.stopPropagation();
+        onPointerDown?.(event);
+    };
+
+    const handleMouseDown = (event: MouseEvent<HTMLTextAreaElement>) => {
+        event.stopPropagation();
+        onMouseDown?.(event);
+    };
+
+    const handleClick = (event: MouseEvent<HTMLTextAreaElement>) => {
+        event.stopPropagation();
+        onClick?.(event);
+    };
+
     const showOverlay = Boolean(activeLabels.length && !hasSelection);
     const mergedStyle = {
         ...(style || {}),
@@ -95,7 +110,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     const menu = mention && candidates.length && textareaRef.current ? <MentionMenu textarea={textareaRef.current} references={candidates} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null;
 
     return (
-        <div className={`relative h-full w-full ${containerClassName || ""}`}>
+        <div className={`relative h-full w-full ${containerClassName || ""}`} data-canvas-no-zoom onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
             {showOverlay ? (
                 <div ref={overlayRef} className={`${className || ""} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`} style={{ ...style, color: theme.node.text }}>
                     <MentionHighlightText value={value || props.placeholder?.toString() || ""} labels={activeLabels} placeholder={!value} />
@@ -103,6 +118,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
             ) : null}
             <textarea
                 {...props}
+                data-canvas-no-zoom
                 ref={(node) => {
                     textareaRef.current = node;
                     if (typeof forwardedRef === "function") forwardedRef(node);
@@ -128,10 +144,13 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                     updateSelectionState();
                     props.onKeyUp?.(event);
                 }}
+                onPointerDown={handlePointerDown}
                 onPointerUp={(event) => {
                     updateSelectionState();
                     props.onPointerUp?.(event);
                 }}
+                onMouseDown={handleMouseDown}
+                onClick={handleClick}
                 onKeyDown={(event) => {
                     if (mention && candidates.length) {
                         if (event.key === "ArrowDown") {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUp, LoaderCircle, Square } from "lucide-react";
 import { Button } from "antd";
 
@@ -40,11 +40,17 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;
     const [prompt, setPrompt] = useState(isEditingExistingContent ? "" : node.metadata?.prompt || "");
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
     const credits = requestCreditCost({ channelMode: config.channelMode, model: config.model, count: mode === "image" ? config.count : 1 });
 
     useEffect(() => {
         setPrompt(isEditingExistingContent ? "" : node.metadata?.prompt || "");
     }, [isEditingExistingContent, node.id]);
+
+    useEffect(() => {
+        const frame = requestAnimationFrame(() => textareaRef.current?.focus());
+        return () => cancelAnimationFrame(frame);
+    }, [node.id]);
 
     const updatePrompt = (value: string) => {
         setPrompt(value);
@@ -67,6 +73,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
             onWheel={(event) => event.stopPropagation()}
         >
             <CanvasResourceMentionTextarea
+                ref={textareaRef}
                 value={prompt}
                 references={mentionReferences}
                 onChange={updatePrompt}
