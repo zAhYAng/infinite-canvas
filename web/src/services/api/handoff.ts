@@ -25,7 +25,7 @@ type CanvasHandoffResponse = {
 };
 
 export async function exchangeCanvasHandoff(handoff: string) {
-    const response = await axios.post<CanvasHandoffResponse>(`${V2API_BASE_URL.replace(/\/+$/, "")}/api/canvas/handoff/exchange`, { handoff });
+    const response = await axios.post<CanvasHandoffResponse>(`${V2API_BASE_URL.replace(/\/+$/, "")}/api/canvas/handoff/exchange`, { handoff }, { timeout: 15000 });
     if (!response.data.success || !response.data.data) {
         throw new Error(response.data.message || "画布登录已过期，请从 v2api 重新进入");
     }

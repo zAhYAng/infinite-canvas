@@ -58,10 +58,17 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const handledConfigParams = useRef(false);
     const [showV2ApiGuide, setShowV2ApiGuide] = useState(false);
     const [handoffLoading, setHandoffLoading] = useState(false);
+    const [hydrationTimedOut, setHydrationTimedOut] = useState(false);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const config = useConfigStore((state) => state.config);
     const hydrated = useConfigStore((state) => state.hydrated);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+
+    useEffect(() => {
+        if (!IS_V2API_MANAGED || hydrated) return;
+        const timer = window.setTimeout(() => setHydrationTimedOut(true), 1500);
+        return () => window.clearTimeout(timer);
+    }, [hydrated]);
 
     useEffect(() => {
         if (handledConfigParams.current) return;
@@ -112,7 +119,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
                 .finally(() => setHandoffLoading(false));
             return;
         }
-        if (IS_V2API_MANAGED && !hydrated) {
+        if (IS_V2API_MANAGED && !hydrated && !hydrationTimedOut) {
             setHandoffLoading(true);
             return;
         }
@@ -165,7 +172,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         if (apiKey) updateConfig("apiKey", apiKey);
         openConfigDialog(false);
         message.success("已导入本地直连配置");
-    }, [config.channels, hydrated, message, openConfigDialog, updateConfig]);
+    }, [config.channels, hydrated, hydrationTimedOut, message, openConfigDialog, updateConfig]);
 
     if (handoffLoading) return <V2ApiConnecting />;
 
