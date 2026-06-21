@@ -3,12 +3,14 @@ import axios from "axios";
 import { V2API_BASE_URL } from "@/constant/env";
 import type { ApiCallFormat, ModelChannel } from "@/stores/use-config-store";
 
+export type CanvasHandoffChannel = Omit<ModelChannel, "apiFormat"> & Partial<Pick<ModelChannel, "apiFormat">> & { group?: string };
+
 export type CanvasHandoffConfig = {
     baseUrl: string;
     apiKey: string;
     apiFormat: ApiCallFormat;
-    channel: Omit<ModelChannel, "apiFormat"> & Partial<Pick<ModelChannel, "apiFormat">>;
-    channels?: Array<Omit<ModelChannel, "apiFormat"> & Partial<Pick<ModelChannel, "apiFormat">> & { group?: string }>;
+    channel: CanvasHandoffChannel;
+    channels?: CanvasHandoffChannel[];
     models: string[];
     user?: {
         id: number;

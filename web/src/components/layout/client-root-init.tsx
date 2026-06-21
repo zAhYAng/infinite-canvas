@@ -2,11 +2,11 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { App, Button } from "antd";
+import { App, Button, Spin } from "antd";
 
 import { createModelChannel, encodeChannelModel, modelMatchesCapability, useConfigStore, type AiConfig, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { IS_V2API_MANAGED, V2API_BASE_URL } from "@/constant/env";
-import { exchangeCanvasHandoff } from "@/services/api/handoff";
+import { exchangeCanvasHandoff, type CanvasHandoffChannel } from "@/services/api/handoff";
 
 function encodedModels(channelId: string, models: string[], capability?: ModelCapability) {
     return models
@@ -18,8 +18,25 @@ function encodedModelsFromChannels(channels: ModelChannel[], capability?: ModelC
     return channels.flatMap((channel) => encodedModels(channel.id, channel.models, capability));
 }
 
-function firstEncodedModel(channels: ModelChannel[], capability: ModelCapability) {
-    return encodedModelsFromChannels(channels, capability)[0] || "";
+function encodedModelsFromHandoffChannels(rawChannels: CanvasHandoffChannel[], channels: ModelChannel[], capability: ModelCapability) {
+    return channels.flatMap((channel, index) => {
+        const group = groupCapability(rawChannels[index]?.group || "");
+        if (group) return group === capability ? channel.models.map((model) => encodeChannelModel(channel.id, model)) : [];
+        return encodedModels(channel.id, channel.models, capability);
+    });
+}
+
+function firstEncodedHandoffModel(rawChannels: CanvasHandoffChannel[], channels: ModelChannel[], capability: ModelCapability) {
+    return encodedModelsFromHandoffChannels(rawChannels, channels, capability)[0] || "";
+}
+
+function groupCapability(group: string): ModelCapability | "" {
+    const value = group.toLowerCase();
+    if (value.includes("video") || value.includes("视频")) return "video";
+    if (value.includes("image") || value.includes("图片") || value.includes("生图")) return "image";
+    if (value.includes("audio") || value.includes("音频") || value.includes("tts")) return "audio";
+    if (value.includes("text") || value.includes("chat") || value.includes("文本") || value.includes("对话")) return "text";
+    return "";
 }
 
 function isV2ApiBaseUrl(value: string) {
@@ -40,8 +57,10 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
     const handledConfigParams = useRef(false);
     const [showV2ApiGuide, setShowV2ApiGuide] = useState(false);
+    const [handoffLoading, setHandoffLoading] = useState(false);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const config = useConfigStore((state) => state.config);
+    const hydrated = useConfigStore((state) => state.hydrated);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
 
     useEffect(() => {
@@ -50,6 +69,8 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         const handoff = searchParams.get("handoff");
         if (handoff) {
             handledConfigParams.current = true;
+            setHandoffLoading(true);
+            setShowV2ApiGuide(false);
             searchParams.delete("handoff");
             window.history.replaceState(null, "", `${window.location.pathname}${searchParams.size ? `?${searchParams}` : ""}${window.location.hash}`);
             void exchangeCanvasHandoff(handoff)
@@ -72,24 +93,30 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
                     updateConfig("apiKey", firstChannel?.apiKey || handoffConfig.apiKey);
                     updateConfig("apiFormat", handoffConfig.apiFormat);
                     updateConfig("models", allModels);
-                    updateConfig("imageModels", encodedModelsFromChannels(channels, "image"));
-                    updateConfig("videoModels", encodedModelsFromChannels(channels, "video"));
-                    updateConfig("audioModels", encodedModelsFromChannels(channels, "audio"));
-                    updateConfig("textModels", encodedModelsFromChannels(channels, "text"));
+                    updateConfig("imageModels", encodedModelsFromHandoffChannels(rawChannels, channels, "image"));
+                    updateConfig("videoModels", encodedModelsFromHandoffChannels(rawChannels, channels, "video"));
+                    updateConfig("audioModels", encodedModelsFromHandoffChannels(rawChannels, channels, "audio"));
+                    updateConfig("textModels", encodedModelsFromHandoffChannels(rawChannels, channels, "text"));
                     updateConfig("model", allModels[0] || "");
-                    updateConfig("imageModel", firstEncodedModel(channels, "image"));
-                    updateConfig("videoModel", firstEncodedModel(channels, "video"));
-                    updateConfig("audioModel", firstEncodedModel(channels, "audio"));
-                    updateConfig("textModel", firstEncodedModel(channels, "text"));
+                    updateConfig("imageModel", firstEncodedHandoffModel(rawChannels, channels, "image"));
+                    updateConfig("videoModel", firstEncodedHandoffModel(rawChannels, channels, "video"));
+                    updateConfig("audioModel", firstEncodedHandoffModel(rawChannels, channels, "audio"));
+                    updateConfig("textModel", firstEncodedHandoffModel(rawChannels, channels, "text"));
                     setShowV2ApiGuide(false);
                     message.success("已连接 v2api 无限画布");
                 })
                 .catch((error) => {
                     setShowV2ApiGuide(true);
                     message.error(error instanceof Error ? error.message : "画布登录失败，请从 v2api 重新进入");
-                });
+                })
+                .finally(() => setHandoffLoading(false));
             return;
         }
+        if (IS_V2API_MANAGED && !hydrated) {
+            setHandoffLoading(true);
+            return;
+        }
+        setHandoffLoading(false);
         if (IS_V2API_MANAGED) {
             const hasExternalConfig = config.channels.some((channel) => channel.baseUrl && !isV2ApiBaseUrl(channel.baseUrl));
             if (hasExternalConfig) {
@@ -138,11 +165,24 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         if (apiKey) updateConfig("apiKey", apiKey);
         openConfigDialog(false);
         message.success("已导入本地直连配置");
-    }, [config.channels, message, openConfigDialog, updateConfig]);
+    }, [config.channels, hydrated, message, openConfigDialog, updateConfig]);
+
+    if (handoffLoading) return <V2ApiConnecting />;
 
     if (showV2ApiGuide) return <V2ApiManagedGuide />;
 
     return <>{children}</>;
+}
+
+function V2ApiConnecting() {
+    return (
+        <main className="flex min-h-dvh items-center justify-center bg-background px-4 text-foreground">
+            <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
+                <Spin />
+                <span>正在连接 v2api 无限画布...</span>
+            </div>
+        </main>
+    );
 }
 
 function V2ApiManagedGuide() {

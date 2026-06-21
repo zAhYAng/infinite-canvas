@@ -87,7 +87,7 @@ export function AppConfigModal() {
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
     const modelOptionsForGroup = (group: ModelGroup) =>
-        filterModelsByCapability(config.models, group.capability).map((model) => ({
+        uniqueModels([...config[group.modelsKey], ...filterModelsByCapability(config.models, group.capability)]).map((model) => ({
             label: modelOptionLabel(config, model),
             value: model,
         }));

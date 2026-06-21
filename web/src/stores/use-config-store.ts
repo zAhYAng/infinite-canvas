@@ -112,6 +112,7 @@ export const defaultWebdavSyncConfig: WebdavSyncConfig = {
 };
 
 type ConfigStore = {
+    hydrated: boolean;
     config: AiConfig;
     webdav: WebdavSyncConfig;
     isConfigOpen: boolean;
@@ -127,7 +128,7 @@ type ConfigStore = {
 function isVideoModelName(model: string) {
     const rawValue = model.toLowerCase();
     const value = modelOptionName(model).toLowerCase();
-    return rawValue.includes("视频") || value.includes("seedance") || value.includes("video") || value.includes("sora") || value.includes("veo") || value.includes("kling") || value.includes("wan") || value.includes("hailuo") || value.includes("grok-imagine") || value.includes("grok-4.20") || value.includes("firefly-veo");
+    return rawValue.includes("视频") || rawValue.includes("即梦") || rawValue.includes("可灵") || rawValue.includes("海螺") || value.includes("seedance") || value.includes("video") || value.includes("sora") || value.includes("veo") || value.includes("kling") || value.includes("wan") || value.includes("hailuo") || value.includes("vidu") || value.includes("jimeng") || value.includes("runway") || value.includes("pika") || value.includes("luma") || value.includes("pixverse") || value.includes("hunyuan-video") || value.includes("ltx-video") || value.includes("t2v") || value.includes("i2v") || value.includes("v2v") || value.includes("grok-imagine") || value.includes("grok-4.20") || value.includes("firefly-veo");
 }
 
 function isImageModelName(model: string) {
@@ -175,6 +176,7 @@ function isAiConfigReady(config: AiConfig, model: string) {
 export const useConfigStore = create<ConfigStore>()(
     persist(
         (set, get) => ({
+            hydrated: false,
             config: defaultConfig,
             webdav: defaultWebdavSyncConfig,
             isConfigOpen: false,
@@ -201,6 +203,9 @@ export const useConfigStore = create<ConfigStore>()(
         {
             name: CONFIG_STORE_KEY,
             partialize: (state) => ({ config: state.config, webdav: state.webdav }),
+            onRehydrateStorage: () => () => {
+                useConfigStore.setState({ hydrated: true });
+            },
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;

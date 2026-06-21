@@ -8,3 +8,7 @@ description: 当前版本已实现但仍需人工验证的变更项
 - 配置与用户偏好：每个模型渠道新增 OpenAI / Gemini 调用格式选择，默认 OpenAI，切换默认格式时同步更新默认 Base URL；渠道 Tab 增加紧凑醒目的提醒，说明模型是否可选需要到“模型”Tab 选择。
 - Gemini 调用格式：支持拉取 Gemini 模型列表，并用于文本问答、在线 Agent 工具调用、基础生图和图生图请求。
 - 音频和视频生成：选择 Gemini 调用格式时先给出不支持提示，仍需使用 OpenAI 兼容渠道。
+- v2api 托管配置：按 handoff 渠道 group 归类模型，并补充常见视频模型名识别，需确认配置弹窗和视频创作台能显示视频模型。
+- v2api 入口：带 handoff 进入无限画布时先显示连接中状态，并等待配置恢复完成；v2api 入口直接跳转画布页，避免配置尚未写入前点击“开始使用”触发登录引导。
+- 视频生成：`firefly-veo`、`grok-imagine-video` 等聊天兼容视频模型改走 `/chat/completions` 并解析返回的视频链接，需确认 v2api 的 aicost 视频模型能生成并展示视频。
+- grok 视频兼容：`grok-imagine-video` 返回的 HTTP 视频文件地址会通过同源 `/api/video-proxy` 代理播放，需确认 HTTPS 页面不会因混合内容拦截导致无法预览。

@@ -10,6 +10,13 @@ import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
 type VideoResponse = { id: string; status?: string; error?: { message?: string } };
 type ApiVideoResponse = VideoResponse | { code?: number; data?: VideoResponse | null; msg?: string };
+type ChatVideoResponse = {
+    choices?: Array<{ message?: Record<string, unknown>; delta?: Record<string, unknown> } & Record<string, unknown>>;
+    error?: { message?: string };
+    code?: number;
+    msg?: string;
+    [key: string]: unknown;
+};
 type SeedanceTask = {
     id: string;
     status?: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "expired";
@@ -20,7 +27,7 @@ type ApiEnvelope<T> = T | { code?: number; data?: T | null; msg?: string };
 type RequestOptions = { signal?: AbortSignal };
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
-export type VideoGenerationTask = { id: string; provider: "openai" | "seedance"; model: string };
+export type VideoGenerationTask = { id: string; provider: "openai" | "seedance" | "chat"; model: string; result?: VideoGenerationResult };
 export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
 
 function aiApiUrl(config: AiConfig, path: string) {
@@ -58,17 +65,21 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     if (videoReferences.length || audioReferences.length) {
         throw new Error("当前视频接口不支持参考视频或参考音频，请切换到 Seedance 2.0 / 火山 Agent Plan 模型，或移除参考素材");
     }
+    if (isChatCompatibleVideoModel(requestConfig.model)) {
+        return createChatVideoTask(requestConfig, selectedModel, prompt, references, options);
+    }
     return createOpenAIVideoTask(requestConfig, selectedModel, prompt, references, options);
 }
 
 export async function pollVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
     const requestConfig = resolveModelRequestConfig(config, task.model);
     assertVideoConfig(requestConfig, requestConfig.model);
+    if (task.provider === "chat") return task.result ? { status: "completed", result: task.result } : { status: "failed", error: "视频接口没有返回可播放的视频" };
     return task.provider === "seedance" ? pollSeedanceTask(requestConfig, task, options) : pollOpenAIVideoTask(requestConfig, task, options);
 }
 
 export async function storeGeneratedVideo(result: VideoGenerationResult): Promise<UploadedFile> {
-    if (result.blob) return uploadMediaFile(result.blob, "video");
+    if (result.blob instanceof Blob) return uploadMediaFile(result.blob, "video");
     if (result.url) return { url: result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4" };
     throw new Error("视频接口没有返回可播放的视频");
 }
@@ -89,6 +100,22 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
         return { id: created.id, provider: "openai", model };
     } catch (error) {
         throw new Error(readAxiosError(error, "视频任务创建失败"));
+    }
+}
+
+async function createChatVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    const content: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [{ type: "text", text: prompt }];
+    const images = await Promise.all(references.slice(0, 7).map((image) => imageToDataUrl(image)));
+    images.filter(Boolean).forEach((url) => content.push({ type: "image_url", image_url: { url } }));
+    const payload = { model: modelOptionName(model), messages: [{ role: "user", content }] };
+
+    try {
+        const response = (await axios.post<ChatVideoResponse>(aiApiUrl(config, "/chat/completions"), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data;
+        const url = extractChatVideoUrl(response);
+        if (!url) throw new Error("视频接口没有返回视频 URL");
+        return { id: `chat-video-${Date.now()}`, provider: "chat", model, result: { url: proxiedVideoUrl(url), mimeType: "video/mp4" } };
+    } catch (error) {
+        throw new Error(readAxiosError(error, "视频生成失败"));
     }
 }
 
@@ -260,6 +287,54 @@ function unwrapVideoResponse(payload: ApiVideoResponse) {
 
 function unwrapSeedanceTask(payload: ApiEnvelope<SeedanceTask>) {
     return unwrapEnvelope(payload, "Seedance 接口没有返回任务");
+}
+
+function extractChatVideoUrl(payload: ChatVideoResponse) {
+    if (payload.code && payload.code !== 0) throw new Error(payload.msg || "请求失败");
+    if (payload.error?.message) throw new Error(payload.error.message);
+    return extractVideoUrl(collectResponseText(payload).join("\n"));
+}
+
+function extractVideoUrl(text: string) {
+    const decoded = decodeHtmlEntities(text);
+    const src = decoded.match(/<video\b[^>]*\bsrc=["']([^"']+)["']/i)?.[1] || decoded.match(/\bsrc=["']([^"']+)["']/i)?.[1];
+    if (src) return src.trim();
+    return decoded.match(/https?:\/\/[^\s"'<>`]+/i)?.[0]?.trim() || "";
+}
+
+function collectResponseText(value: unknown, texts: string[] = []) {
+    if (typeof value === "string") {
+        texts.push(value);
+        return texts;
+    }
+    if (!value || typeof value !== "object") return texts;
+    if (Array.isArray(value)) {
+        value.forEach((item) => collectResponseText(item, texts));
+        return texts;
+    }
+    Object.values(value).forEach((item) => collectResponseText(item, texts));
+    return texts;
+}
+
+function decodeHtmlEntities(value: string) {
+    return value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+}
+
+function isChatCompatibleVideoModel(model: string) {
+    const value = model.toLowerCase();
+    return value.includes("firefly-veo") || value.includes("grok-imagine-video");
+}
+
+function proxiedVideoUrl(url: string) {
+    try {
+        const parsed = new URL(url);
+        if (parsed.protocol === "http:" && parsed.host === "164.37.102.138:8001" && parsed.pathname === "/v1/files/video") {
+            return `/api/video-proxy?url=${encodeURIComponent(url)}`;
+        }
+    } catch {
+        return url;
+    }
+    return url;
 }
 
 function unwrapEnvelope<T>(payload: ApiEnvelope<T>, emptyMessage: string): T {
