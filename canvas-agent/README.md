@@ -36,9 +36,17 @@ Canvas Agent 默认只监听 `127.0.0.1`。网页第一次带正确 token 连接
 
 ## Codex MCP
 
-如果希望 Codex 终端能直接操作画布，需要先把 Canvas Agent 注册成 Codex MCP。
+推荐按 Cowart 类似方式使用：让 Codex 当前对话直接调用 `infinite-canvas` MCP 工具，网页画布只负责展示、连接和执行工具操作。不要把创作请求再发到网页侧边栏里的 Codex 对话。
 
-Canvas Agent 启动后，给 Codex 添加 MCP：
+从仓库根目录启动本地桥接服务：
+
+```bash
+node scripts/start-canvas-agent.mjs
+```
+
+启动后打开 `https://image.v2api.top/` 或具体画布地址，在右上角 `Agent -> 本机` 填入终端输出的 Local URL 和 Connect token 并连接。
+
+如果使用本仓库作为 Codex 插件，`.mcp.json` 会自动注册 `infinite-canvas` MCP。未安装插件时，也可以手动给 Codex 添加 MCP：
 
 ```bash
 codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp
@@ -49,6 +57,21 @@ codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp
 ```bash
 codex mcp add infinite-canvas -- node /path/to/infinite-canvas/canvas-agent/dist/index.js mcp
 ```
+
+或从仓库根目录使用插件同款启动脚本：
+
+```bash
+codex mcp add infinite-canvas -- node /path/to/infinite-canvas/scripts/start-canvas-mcp.mjs
+```
+
+本机开发调试时，也可以把仓库作为个人插件安装：
+
+```bash
+node scripts/sync-personal-codex-plugin.mjs
+codex plugin add v2api-infinite-canvas@personal
+```
+
+安装或重装插件后，需要开启一个新的 Codex 对话，新的技能和 MCP 工具才会加载到上下文中。
 
 Canvas Agent 源码使用 TypeScript 编写，MCP 协议层使用官方 `@modelcontextprotocol/sdk`，工具入参使用 `zod` 描述。
 
@@ -87,6 +110,8 @@ default_tools_approval_mode = "approve"
 ```
 
 ## 侧边栏 Codex
+
+本地面板里保留 Codex 对话入口，但推荐优先使用上面的 MCP 插件方式。插件方式由当前 Codex 对话直接调用 `infinite-canvas` MCP，链路更短，也更接近 Cowart 的使用方式。
 
 本地面板会把提示词发送给 Canvas Agent。Canvas Agent 使用官方 `@openai/codex` CLI 的 `codex app-server --stdio` 启动并复用同一个 Codex thread，启动时会注入 `infinite-canvas` MCP 配置并自动放行 MCP 审批，真正执行画布修改前仍由网页侧边栏二次确认。
 

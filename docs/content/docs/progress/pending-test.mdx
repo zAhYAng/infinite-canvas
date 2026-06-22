@@ -12,3 +12,5 @@ description: 当前版本已实现但仍需人工验证的变更项
 - v2api 入口：带 handoff 进入无限画布时先显示连接中状态，并等待配置恢复完成；v2api 入口直接跳转画布页，避免配置尚未写入前点击“开始使用”触发登录引导。
 - 视频生成：`firefly-veo`、`grok-imagine-video` 等聊天兼容视频模型改走 `/chat/completions` 并解析返回的视频链接，需确认 v2api 的 aicost 视频模型能生成并展示视频。
 - grok 视频兼容：`grok-imagine-video` 返回的 HTTP 视频文件地址会通过同源 `/api/video-proxy` 代理播放，需确认 HTTPS 页面不会因混合内容拦截导致无法预览。
+- Codex 插件接入：参考 Cowart 方式新增 `v2api-infinite-canvas` 插件清单、MCP 启动脚本和两个技能说明，需在 Codex 插件环境中确认可加载 `infinite-canvas` MCP，并能在已连接的 `image.v2api.top` 画布中创建/修改节点。
+- 画布生图稳定性：图片生成和编辑服务层不再用画布取消信号中断底层图片 API 请求，主生图和图片重试会在请求返回后丢弃已取消结果；V2API `/images/generations` 走同源长耗时代理并发送心跳，避免 100 秒以上生图在浏览器侧 60 秒断开；NewAPI 返回的公网 HTTP 静态生成图 URL 走同源图片代理，避免 HTTPS 页面 fetch 图片时出现 `Failed to fetch`；批量图片生成全部失败时保留首个具体错误信息，需确认配置节点和批量根节点不再只显示“全部图片生成失败”。

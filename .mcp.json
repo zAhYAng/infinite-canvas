@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "infinite-canvas": {
+      "command": "node",
+      "args": [
+        "./scripts/start-canvas-mcp.mjs"
+      ],
+      "cwd": "."
+    }
+  }
+}

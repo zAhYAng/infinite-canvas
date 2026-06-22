@@ -1,0 +1,39 @@
+{
+  "name": "v2api-infinite-canvas",
+  "version": "0.1.0",
+  "description": "Operate image.v2api.top Infinite Canvas from Codex through MCP.",
+  "author": {
+    "name": "v2api"
+  },
+  "keywords": [
+    "canvas",
+    "infinite-canvas",
+    "v2api",
+    "mcp",
+    "image-generation",
+    "video-generation"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "V2API Infinite Canvas",
+    "shortDescription": "Use Codex to operate image.v2api.top Infinite Canvas.",
+    "longDescription": "Connects Codex to the image.v2api.top Infinite Canvas through a local MCP bridge. Codex can read canvas state, create text/config nodes, build image or video generation flows, connect nodes, and trigger generation while the web canvas remains the visual workspace.",
+    "developerName": "v2api",
+    "category": "Productivity",
+    "websiteURL": "https://image.v2api.top/",
+    "brandColor": "#1677ff",
+    "capabilities": [
+      "Remote infinite canvas",
+      "Local MCP bridge",
+      "Canvas node operations",
+      "Image generation flows",
+      "Video generation flows"
+    ],
+    "defaultPrompt": [
+      "打开我的 V2API 无限画布。",
+      "读取当前画布并帮我创建一个电商宣传场景。",
+      "在画布里创建一个生视频流程。"
+    ]
+  }
+}

@@ -185,9 +185,21 @@ function resolveImageDataUrl(item: Record<string, unknown>) {
         return `data:image/png;base64,${item.b64_json}`;
     }
     if (typeof item.url === "string" && item.url) {
-        return item.url;
+        return resolveGeneratedImageUrl(item.url);
     }
     return null;
+}
+
+function resolveGeneratedImageUrl(url: string) {
+    try {
+        const target = new URL(url);
+        if ((target.protocol === "http:" || target.protocol === "https:") && target.pathname.startsWith("/opt/new-api/static-custom/generated-images/")) {
+            return `/api/generated-image-proxy?url=${encodeURIComponent(url)}`;
+        }
+    } catch {
+        return url;
+    }
+    return url;
 }
 
 function parseImagePayload(payload: ImageApiResponse) {
@@ -237,6 +249,59 @@ function aiHeaders(config: AiConfig, contentType?: string) {
         Authorization: `Bearer ${config.apiKey}`,
         ...(contentType ? { "Content-Type": contentType } : {}),
     };
+}
+
+function shouldUseImageGenerationProxy(url: string) {
+    if (typeof window === "undefined") return false;
+    try {
+        const target = new URL(url);
+        return target.protocol === "https:" && (target.hostname === "v2api.top" || target.hostname.endsWith(".v2api.top")) && target.pathname === "/v1/images/generations";
+    } catch {
+        return false;
+    }
+}
+
+async function requestProxiedImageGeneration(url: string, apiKey: string, body: Record<string, unknown>) {
+    const response = await fetch("/api/image-generation-proxy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, apiKey, body }),
+    });
+    if (!response.ok) throw new Error(await readFetchError(response, "请求失败"));
+    if (!response.body) return (await response.json()) as ImageApiResponse;
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+        const { done, value } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+            const event = parseProxyLine(line);
+            if (!event || event.type === "ping") continue;
+            if (event.type === "error") throw new Error(event.message || responseErrorMessage(event.payload) || "请求失败");
+            if (event.type === "result") return event.payload as ImageApiResponse;
+        }
+        if (done) break;
+    }
+    if (buffer.trim()) {
+        const event = parseProxyLine(buffer);
+        if (event?.type === "error") throw new Error(event.message || responseErrorMessage(event.payload) || "请求失败");
+        if (event?.type === "result") return event.payload as ImageApiResponse;
+    }
+    throw new Error("图片生成代理没有返回结果");
+}
+
+function parseProxyLine(line: string) {
+    const value = line.trim();
+    if (!value) return null;
+    try {
+        return JSON.parse(value) as { type?: "ping" | "result" | "error"; payload?: unknown; message?: string };
+    } catch {
+        return null;
+    }
 }
 
 function geminiBaseUrl(config: Pick<AiConfig, "baseUrl">) {
@@ -570,12 +635,12 @@ function parseGeminiToolResponse(payload: GeminiPayload): ToolResponseResult {
     return { content, toolCalls };
 }
 
-async function requestGeminiImages(config: AiConfig, prompt: string, references: ReferenceImage[], count: number, options?: RequestOptions) {
-    const requests = Array.from({ length: count }, () => requestGeminiImagesOnce(config, prompt, references, options));
+async function requestGeminiImages(config: AiConfig, prompt: string, references: ReferenceImage[], count: number) {
+    const requests = Array.from({ length: count }, () => requestGeminiImagesOnce(config, prompt, references));
     return (await Promise.all(requests)).flat();
 }
 
-async function requestGeminiImagesOnce(config: AiConfig, prompt: string, references: ReferenceImage[], options?: RequestOptions) {
+async function requestGeminiImagesOnce(config: AiConfig, prompt: string, references: ReferenceImage[]) {
     const parts: GeminiPart[] = [{ text: prompt }];
     for (const image of references) {
         parts.push(toGeminiImagePart(await imageToDataUrl(image)));
@@ -586,7 +651,7 @@ async function requestGeminiImagesOnce(config: AiConfig, prompt: string, referen
             ...toGeminiBody(config, [{ role: "user", content: prompt }], { generationConfig: { responseModalities: ["TEXT", "IMAGE"] } }),
             contents: [{ role: "user", parts }],
         },
-        { headers: geminiHeaders(config), signal: options?.signal },
+        { headers: geminiHeaders(config) },
     );
     return parseGeminiImagePayload(response.data);
 }
@@ -612,31 +677,32 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     if (requestConfig.apiFormat === "gemini") {
         try {
-            return await requestGeminiImages(requestConfig, prompt, [], n, options);
+            return await requestGeminiImages(requestConfig, prompt, [], n);
         } catch (error) {
             throw new Error(readAxiosError(error, "请求失败"));
         }
     }
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
+    const url = aiApiUrl(requestConfig, "/images/generations");
+    const body = {
+        model: requestConfig.model,
+        prompt: withSystemPrompt(requestConfig, prompt),
+        n,
+        ...(quality ? { quality } : {}),
+        ...(requestSize ? { size: requestSize } : {}),
+        response_format: "b64_json",
+        output_format: IMAGE_OUTPUT_FORMAT,
+    };
     try {
-        const response = await axios.post<ImageApiResponse>(
-            aiApiUrl(requestConfig, "/images/generations"),
-            {
-                model: requestConfig.model,
-                prompt: withSystemPrompt(requestConfig, prompt),
-                n,
-                ...(quality ? { quality } : {}),
-                ...(requestSize ? { size: requestSize } : {}),
-                response_format: "b64_json",
-                output_format: IMAGE_OUTPUT_FORMAT,
-            },
-            {
-                headers: aiHeaders(requestConfig, "application/json"),
-                signal: options?.signal,
-            },
-        );
-        const images = parseImagePayload(response.data);
+        const data = shouldUseImageGenerationProxy(url)
+            ? await requestProxiedImageGeneration(url, requestConfig.apiKey, body)
+            : (
+                  await axios.post<ImageApiResponse>(url, body, {
+                      headers: aiHeaders(requestConfig, "application/json"),
+                  })
+              ).data;
+        const images = parseImagePayload(data);
         return images;
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
@@ -650,7 +716,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (requestConfig.apiFormat === "gemini") {
         if (mask) throw new Error("Gemini 调用格式暂不支持蒙版编辑");
         try {
-            return await requestGeminiImages(requestConfig, requestPrompt, references, n, options);
+            return await requestGeminiImages(requestConfig, requestPrompt, references, n);
         } catch (error) {
             throw new Error(readAxiosError(error, "请求失败"));
         }
@@ -674,7 +740,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (mask) formData.set("mask", dataUrlToFile(mask));
 
     try {
-        const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig), signal: options?.signal });
+        const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig) });
         const images = parseImagePayload(response.data);
         return images;
     } catch (error) {
