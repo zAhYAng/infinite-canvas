@@ -73,6 +73,8 @@ codex plugin add v2api-infinite-canvas@personal
 
 安装或重装插件后，需要开启一个新的 Codex 对话，新的技能和 MCP 工具才会加载到上下文中。
 
+插件内的启动脚本会优先使用当前仓库里的 `canvas-agent` 源码；如果插件被复制到没有项目源码的新电脑，则会自动回退到 `npx -y @basketikun/canvas-agent`。
+
 Canvas Agent 源码使用 TypeScript 编写，MCP 协议层使用官方 `@modelcontextprotocol/sdk`，工具入参使用 `zod` 描述。
 
 如果希望终端里的 Codex 不被 MCP 审批卡住，可以在 `~/.codex/config.toml` 里给这个 MCP 设置自动放行：
