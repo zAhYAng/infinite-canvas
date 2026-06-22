@@ -3,6 +3,7 @@
   "root": true,
   "defaultOpen": true,
   "pages": [
+    "codex-new-computer-setup",
     "canvas-node-manual",
     "canvas-shortcuts"
   ]

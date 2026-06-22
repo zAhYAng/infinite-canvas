@@ -10,6 +10,7 @@
 
 ## 操作手册
 
+- [Codex 新电脑连接画布](/docs/canvas/codex-new-computer-setup)
 - [画布节点操作手册](/docs/canvas/canvas-node-manual)
 - [画布快捷键](/docs/canvas/canvas-shortcuts)
 
