@@ -6,7 +6,6 @@ import { Button } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
-import { CreditSymbol, requestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
@@ -41,7 +40,6 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const isEditingExistingContent = hasTextContent || hasImageContent;
     const [prompt, setPrompt] = useState(isEditingExistingContent ? "" : node.metadata?.prompt || "");
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-    const credits = requestCreditCost({ channelMode: config.channelMode, model: config.model, count: mode === "image" ? config.count : 1 });
 
     useEffect(() => {
         setPrompt(isEditingExistingContent ? "" : node.metadata?.prompt || "");
@@ -83,16 +81,16 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                 placeholder={promptPlaceholder(mode, hasImageContent, hasTextContent)}
             />
 
-            <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
+            <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2 overflow-hidden">
                     <CanvasPromptLibrary onSelect={updatePrompt} />
                     {mode === "image" ? (
                         <>
-                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="image" onMissingConfig={() => openConfigDialog(true)} />
+                            <ModelPicker className="!h-10 !min-w-0 !flex-1" fullWidth config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="image" onMissingConfig={() => openConfigDialog(true)} />
                             <CanvasImageSettingsPopover
                                 config={config}
                                 placement="topLeft"
-                                buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3"
+                                buttonClassName="!h-10 !w-[132px] !max-w-[132px] !justify-start !rounded-full !px-3"
                                 onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: Number(value) || 1 } : { [key]: value })}
                                 onMissingConfig={() => openConfigDialog(true)}
                                 onOpenChange={onImageSettingsOpenChange}
@@ -100,21 +98,21 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                         </>
                     ) : mode === "video" ? (
                         <>
-                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="video" onMissingConfig={() => openConfigDialog(true)} />
-                            <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
+                            <ModelPicker className="!h-10 !min-w-0 !flex-1" fullWidth config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="video" onMissingConfig={() => openConfigDialog(true)} />
+                            <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !w-[132px] !max-w-[132px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
                         </>
                     ) : mode === "audio" ? (
                         <>
-                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="audio" onMissingConfig={() => openConfigDialog(true)} />
-                            <CanvasAudioSettingsPopover config={config} buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, audioConfigPatch(key, value))} />
+                            <ModelPicker className="!h-10 !min-w-0 !flex-1" fullWidth config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="audio" onMissingConfig={() => openConfigDialog(true)} />
+                            <CanvasAudioSettingsPopover config={config} buttonClassName="!h-10 !w-[132px] !max-w-[132px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, audioConfigPatch(key, value))} />
                         </>
                     ) : (
-                        <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="text" onMissingConfig={() => openConfigDialog(true)} />
+                        <ModelPicker className="!h-10 !min-w-0 !flex-1" fullWidth config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="text" onMissingConfig={() => openConfigDialog(true)} />
                     )}
                 </div>
                 <Button
                     type="primary"
-                    className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3"
+                    className="!h-10 !min-w-[72px] shrink-0 !rounded-full !px-3"
                     danger={isRunning}
                     disabled={!isRunning && !prompt.trim()}
                     onClick={() => (isRunning ? onStop(node.id) : submit())}
@@ -129,10 +127,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                             </>
                         ) : (
                             <>
-                                <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums">
-                                    <CreditSymbol />
-                                    {credits.toLocaleString()}
-                                </span>
+                                <span className="text-xs font-medium">生成</span>
                                 <ArrowUp className="size-4" />
                             </>
                         )}

@@ -10,7 +10,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useCanvasAgentStore, type AgentAttachment, type AgentChatItem, type AgentEventLog, type AgentPanelTab, type AgentPendingToolCall, type AgentThreadSummary } from "../stores/use-canvas-agent-store";
-import { summarizeCanvasAgentOps, type CanvasAgentOp, type CanvasAgentSnapshot } from "../utils/canvas-agent-ops";
+import { shouldConfirmCanvasAgentOps, summarizeCanvasAgentOps, type CanvasAgentOp, type CanvasAgentSnapshot } from "../utils/canvas-agent-ops";
 import { AgentChatComposer, AgentChatMessage, AgentPanelTabs, AgentPendingToolCard, AgentWorkingMessage, type CanvasAgentChatAttachment } from "./canvas-agent-chat-ui";
 
 const PANEL_MOTION_SECONDS = 0.5;
@@ -39,7 +39,7 @@ type AgentWorkspace = { canvasId: string; workspacePath: string; activeThreadId?
 type AgentThreadsResponse = { ok?: boolean; workspace?: AgentWorkspace; data?: AgentThreadSummary[] };
 type AgentThreadResponse = { ok?: boolean; workspace?: AgentWorkspace; thread?: AgentThreadSummary; messages?: AgentChatItem[] };
 
-export function CanvasLocalAgentPanel({ snapshot, canUndoOps, collapsed, embedded, onApplyOps, onUndoOps }: { snapshot: CanvasAgentSnapshot; canUndoOps: boolean; collapsed?: boolean; embedded?: boolean; onApplyOps: (ops: CanvasAgentOp[]) => unknown; onUndoOps: () => CanvasAgentSnapshot | null }) {
+export function CanvasLocalAgentPanel({ snapshot, canUndoOps, collapsed, embedded, onApplyOps, onUndoOps, onConnected }: { snapshot: CanvasAgentSnapshot; canUndoOps: boolean; collapsed?: boolean; embedded?: boolean; onApplyOps: (ops: CanvasAgentOp[]) => unknown; onUndoOps: () => CanvasAgentSnapshot | null; onConnected?: () => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const user = useUserStore((state) => state.user);
     const { message, modal } = App.useApp();
@@ -50,6 +50,7 @@ export function CanvasLocalAgentPanel({ snapshot, canUndoOps, collapsed, embedde
     const confirmToolsRef = useRef(confirmTools);
     const pendingToolRef = useRef<AgentPendingToolCall | null>(null);
     const onApplyOpsRef = useRef(onApplyOps);
+    const onConnectedRef = useRef(onConnected);
     const connectedRef = useRef(false);
     const errorLoggedRef = useRef(false);
     const attachmentUrlsRef = useRef(new Set<string>());
@@ -92,6 +93,9 @@ export function CanvasLocalAgentPanel({ snapshot, canUndoOps, collapsed, embedde
         onApplyOpsRef.current = onApplyOps;
     }, [onApplyOps]);
     useEffect(() => {
+        onConnectedRef.current = onConnected;
+    }, [onConnected]);
+    useEffect(() => {
         listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
     }, [messages, pendingTool, waiting]);
     useEffect(() => () => attachmentUrlsRef.current.forEach((url) => URL.revokeObjectURL(url)), []);
@@ -103,11 +107,13 @@ export function CanvasLocalAgentPanel({ snapshot, canUndoOps, collapsed, embedde
         const clientId = clientIdRef.current;
         const source = new EventSource(`${endpoint}/events?token=${encodeURIComponent(token)}&clientId=${encodeURIComponent(clientId)}`);
         source.addEventListener("hello", () => {
+            const wasConnected = connectedRef.current;
             errorLoggedRef.current = false;
             connectedRef.current = true;
             setAgentState({ connected: true, activity: "已连接", connectError: "", messages: useCanvasAgentStore.getState().messages.filter((item) => !isConnectionErrorMessage(item)) });
             message.success("本地 Agent 已连接");
             void postState(endpoint, token, clientId, snapshotRef.current);
+            if (!wasConnected) onConnectedRef.current?.();
         });
         source.addEventListener("tool_call", (event) => {
             const data = parseEventData<AgentPendingToolCall>(event);
@@ -231,13 +237,14 @@ export function CanvasLocalAgentPanel({ snapshot, canUndoOps, collapsed, embedde
     };
 
     const handleToolCall = async (endpoint: string, token: string, payload: AgentPendingToolCall) => {
-        if (confirmToolsRef.current && payload.name === "canvas_apply_ops") {
+        const input: { ops?: CanvasAgentOp[] } = payload.input || {};
+        if (payload.name === "canvas_apply_ops" && shouldConfirmCanvasAgentOps(input.ops, confirmToolsRef.current)) {
             if (pendingToolRef.current) {
                 await postToolResult(endpoint, token, clientIdRef.current, { requestId: payload.requestId, error: "仍有待确认的画布工具调用" });
                 return;
             }
             pendingToolRef.current = payload;
-            setAgentState({ pendingTool: payload, activity: "等待确认", waiting: false });
+            setAgentState({ pendingTool: payload, activity: "等待确认", waiting: false, activeTab: "chat" });
             addEventLog("等待确认", payload, payload);
             return;
         }

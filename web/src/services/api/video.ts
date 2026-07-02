@@ -104,10 +104,18 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
 }
 
 async function createChatVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
-    const content: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [{ type: "text", text: prompt }];
+    const modelName = modelOptionName(model);
+    const seconds = normalizeChatVideoSeconds(modelName, config.videoSeconds);
+    const duration = Number(seconds);
+    const content: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [];
     const images = await Promise.all(references.slice(0, 7).map((image) => imageToDataUrl(image)));
-    images.filter(Boolean).forEach((url) => content.push({ type: "image_url", image_url: { url } }));
-    const payload = { model: modelOptionName(model), messages: [{ role: "user", content }] };
+    const imageItems = images.filter(Boolean).map((url) => ({ type: "image_url" as const, image_url: { url } }));
+    if (isGrokImagineVideoModel(modelName)) content.push(...imageItems);
+    content.push({ type: "text", text: withVideoDurationPrompt(prompt, seconds) });
+    if (!isGrokImagineVideoModel(modelName)) content.push(...imageItems);
+    const payload = isGrokImagineVideoModel(modelName)
+        ? buildGrokImagineVideoPayload(config, modelName, prompt, content, imageItems, duration)
+        : { model: modelName, messages: [{ role: "user", content }], seconds: duration, duration };
 
     try {
         const response = (await axios.post<ChatVideoResponse>(aiApiUrl(config, "/chat/completions"), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data;
@@ -267,6 +275,19 @@ function normalizeVideoSeconds(value: string) {
     return String(Math.max(1, Math.min(20, seconds)));
 }
 
+function normalizeChatVideoSeconds(model: string, value: string) {
+    const seconds = Number(normalizeVideoSeconds(value));
+    if (!isGrokImagineVideoModel(model)) return String(seconds);
+    const allowed = model.toLowerCase().includes("1.5-preview") ? [6, 10, 15] : [6, 10, 12, 16, 20];
+    if (allowed.includes(seconds)) return String(seconds);
+    const normalized = allowed.reduce((best, current) => (Math.abs(current - seconds) < Math.abs(best - seconds) ? current : best), allowed[0]);
+    return String(normalized);
+}
+
+function withVideoDurationPrompt(prompt: string, seconds: string) {
+    return `${prompt.trim()}\n\n视频时长：${seconds} 秒。请按该时长生成视频。`;
+}
+
 function normalizeVideoSize(value: string) {
     if (value === "auto") return null;
     const size = value || "1280x720";
@@ -279,6 +300,69 @@ function normalizeVideoResolution(value: string) {
     if (value === "auto" || value === "high" || value === "medium") return "720p";
     const resolution = value.replace(/p$/i, "") || "720";
     return `${resolution}p`;
+}
+
+function isGrokImagineVideoModel(model: string) {
+    return model.toLowerCase().includes("grok-imagine-video");
+}
+
+function buildGrokImagineVideoPayload(
+    config: AiConfig,
+    model: string,
+    prompt: string,
+    content: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>,
+    imageItems: Array<{ type: "image_url"; image_url: { url: string } }>,
+    duration: number,
+) {
+    const aspectRatio = normalizeGrokAspectRatio(config.size);
+    const size = normalizeVideoSize(config.size) || grokSizeFromAspectRatio(aspectRatio);
+    const resolution = normalizeVideoResolution(config.vquality);
+    const videoConfig = {
+        seconds: duration,
+        duration,
+        video_length: duration,
+        size,
+        aspect_ratio: aspectRatio,
+        resolution,
+        resolution_name: resolution,
+    };
+    const messages = [{ role: "user", content }];
+    if (duration > 10) messages.push({ role: "user", content: [...content] });
+    return {
+        model,
+        stream: false,
+        messages,
+        prompt: withVideoDurationPrompt(prompt, String(duration)),
+        duration,
+        seconds: duration,
+        aspect_ratio: aspectRatio,
+        size,
+        resolution,
+        resolution_name: resolution,
+        generation_type: imageItems.length ? "首帧生成视频" : "文生视频",
+        image_count: imageItems.length,
+        video_config: videoConfig,
+        metadata: { video_config: videoConfig },
+        ...(imageItems.length ? { image_reference: imageItems } : {}),
+    };
+}
+
+function normalizeGrokAspectRatio(value: string) {
+    if (["16:9", "9:16", "1:1", "2:3", "3:2"].includes(value)) return value;
+    if (/^\d+x\d+$/.test(value)) {
+        const [width, height] = value.split("x").map(Number);
+        if (width === height) return "1:1";
+        return width > height ? "16:9" : "9:16";
+    }
+    return "16:9";
+}
+
+function grokSizeFromAspectRatio(aspectRatio: string) {
+    if (aspectRatio === "9:16") return "720x1280";
+    if (aspectRatio === "1:1") return "1024x1024";
+    if (aspectRatio === "2:3") return "832x1248";
+    if (aspectRatio === "3:2") return "1248x832";
+    return "1280x720";
 }
 
 function unwrapVideoResponse(payload: ApiVideoResponse) {

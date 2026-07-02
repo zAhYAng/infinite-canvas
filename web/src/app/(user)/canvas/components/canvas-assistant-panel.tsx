@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import copyToClipboard from "copy-to-clipboard";
 import { Bot, Copy, Cpu, History, PanelRightClose, Plus, Settings2, Trash2, X } from "lucide-react";
-import { Button, Modal, Segmented, Switch, Tooltip } from "antd";
+import { Button, Modal, Segmented, Tooltip } from "antd";
 import { motion } from "motion/react";
 
 import { modelOptionName, normalizeModelOptionValue, resolveModelChannel, selectableModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -23,7 +23,7 @@ import { CanvasLocalAgentPanel } from "./canvas-local-agent-panel";
 import { NODE_DEFAULT_SIZE } from "../constants";
 import { CanvasNodeType, type CanvasAssistantMessage, type CanvasAssistantReference, type CanvasAssistantSession, type CanvasNodeData } from "../types";
 import { useCanvasAgentStore } from "../stores/use-canvas-agent-store";
-import { summarizeCanvasAgentOps, type CanvasAgentOp, type CanvasAgentSnapshot } from "../utils/canvas-agent-ops";
+import { shouldConfirmCanvasAgentOps, summarizeCanvasAgentOps, type CanvasAgentOp, type CanvasAgentSnapshot, type CanvasAgentToolConfirmMode } from "../utils/canvas-agent-ops";
 
 export const CANVAS_AGENT_PANEL_MOTION_MS = 500;
 const PANEL_MOTION_SECONDS = CANVAS_AGENT_PANEL_MOTION_MS / 1000;
@@ -117,7 +117,7 @@ const ONLINE_AGENT_TOOLS: ResponseFunctionTool[] = [
 ];
 type OnlineAgentTab = "setup" | "chat" | "history" | "log";
 type OnlineAgentLog = { id: string; time: string; title: string; data?: unknown };
-type OnlineAgentLogContext = { model: string; running: boolean; confirmTools: boolean; messages: number; nodes: number; connections: number };
+type OnlineAgentLogContext = { model: string; running: boolean; confirmTools: CanvasAgentToolConfirmMode; messages: number; nodes: number; connections: number };
 type OnlineLoopContext = { step: number };
 type OnlineToolResult = { ok: true; message: string; data?: unknown } | { ok: false; message: string };
 type OnlineExecutedToolCall = { toolCallId: string; name: string; result: OnlineToolResult };
@@ -285,8 +285,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, snapshot, session
             });
             addOnlineLog("模型工具回复", result);
             if (result.toolCalls.length) {
-                const writableCalls = result.toolCalls.filter(isWritableToolCall);
-                if (confirmTools && writableCalls.length) {
+                if (shouldConfirmOnlineToolCalls(result.toolCalls, snapshotRef.current, effectiveConfig, confirmTools)) {
                     upsertMessage(sessionId, { id: assistantId, role: "assistant", text: result.content || streamed || "准备执行工具，等待确认。" });
                     const toolMessageId = nanoid();
                     pendingToolContextRef.current.set(toolMessageId, { messages, toolCalls: result.toolCalls, assistantId, step: loop.step });
@@ -341,8 +340,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, snapshot, session
         });
         addOnlineLog(`Agent Tool Loop ${step + 1} 回复`, next);
         if (next.toolCalls.length) {
-            const writableCalls = next.toolCalls.filter(isWritableToolCall);
-            if (confirmTools && writableCalls.length) {
+            if (shouldConfirmOnlineToolCalls(next.toolCalls, snapshotRef.current, effectiveConfig, confirmTools)) {
                 upsertMessage(sessionId, { id: assistantId, role: "assistant", text: next.content || streamed || "准备执行工具，等待确认。" });
                 const toolMessageId = nanoid();
                 pendingToolContextRef.current.set(toolMessageId, { messages: nextMessages, toolCalls: next.toolCalls, assistantId, step: step + 1 });
@@ -644,10 +642,21 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, snapshot, session
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                         <AgentModeSwitch value={agentMode} theme={theme} onChange={onAgentModeChange} />
-                        <label className="flex items-center gap-1.5 text-xs" style={{ color: theme.node.muted }}>
-                            <Switch size="small" checked={confirmTools} onChange={(confirmTools) => setAgentState({ confirmTools })} />
-                            工具确认
-                        </label>
+                        <Tooltip title="工具确认：风险只拦截删除和生成，全部会拦截所有写操作">
+                            <label className="flex items-center gap-1.5 text-xs" style={{ color: theme.node.muted }}>
+                                <span className="whitespace-nowrap">确认</span>
+                                <Segmented
+                                    size="small"
+                                    value={confirmTools}
+                                    onChange={(value) => setAgentState({ confirmTools: value as CanvasAgentToolConfirmMode })}
+                                    options={[
+                                        { label: "关", value: "off" },
+                                        { label: "风险", value: "risky" },
+                                        { label: "全部", value: "all" },
+                                    ]}
+                                />
+                            </label>
+                        </Tooltip>
                         <Tooltip title="收起对话">
                             <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" style={iconButtonStyle} icon={<PanelRightClose className="size-4" />} onClick={collapse} />
                         </Tooltip>
@@ -660,6 +669,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, snapshot, session
                         canUndoOps={canUndoOps}
                         onApplyOps={onApplyOps}
                         onUndoOps={onUndoOps}
+                        onConnected={collapse}
                     />
                 ) : (
                     onlineContent
@@ -1041,8 +1051,18 @@ function runGenerationOp(nodeId: string, mode: "text" | "image" | "video" | "aud
     return { type: "run_generation", nodeId, mode, prompt };
 }
 
-function isWritableToolCall(call: ResponseToolCall) {
-    return !ONLINE_READ_TOOLS.has(call.function.name);
+function shouldConfirmOnlineToolCalls(calls: ResponseToolCall[], snapshot: CanvasAgentSnapshot, config: AiConfig, mode: CanvasAgentToolConfirmMode) {
+    if (mode === "off") return false;
+    const writableCalls = calls.filter((call) => !ONLINE_READ_TOOLS.has(call.function.name));
+    if (!writableCalls.length) return false;
+    if (mode === "all") return true;
+    return writableCalls.some((call) => {
+        try {
+            return shouldConfirmCanvasAgentOps(onlineToolToOps(call.function.name, parseToolArguments(call.function.arguments), snapshot, config), "risky");
+        } catch {
+            return true;
+        }
+    });
 }
 
 function toolCallsFromDetail(detail: Record<string, unknown>): ResponseToolCall[] {

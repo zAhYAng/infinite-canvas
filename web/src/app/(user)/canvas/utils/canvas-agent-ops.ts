@@ -22,6 +22,8 @@ export type CanvasAgentSnapshot = {
     viewport: ViewportTransform;
 };
 
+export type CanvasAgentToolConfirmMode = "off" | "risky" | "all";
+
 export function summarizeCanvasAgentOps(ops?: CanvasAgentOp[]) {
     const counts = (Array.isArray(ops) ? ops : []).reduce<Record<string, number>>((acc, op) => {
         if (!op?.type) return acc;
@@ -31,6 +33,13 @@ export function summarizeCanvasAgentOps(ops?: CanvasAgentOp[]) {
     return Object.entries(counts)
         .map(([type, count]) => `${opLabel(type)} ${count}`)
         .join("，");
+}
+
+export function shouldConfirmCanvasAgentOps(ops?: CanvasAgentOp[], mode: CanvasAgentToolConfirmMode = "risky") {
+    const items = Array.isArray(ops) ? ops : [];
+    if (!items.length || mode === "off") return false;
+    if (mode === "all") return true;
+    return items.some(isRiskyCanvasAgentOp);
 }
 
 export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, ops?: CanvasAgentOp[]) {
@@ -81,6 +90,10 @@ export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, ops?: CanvasA
     });
 
     return { ...snapshot, nodes, connections, selectedNodeIds, viewport };
+}
+
+function isRiskyCanvasAgentOp(op: CanvasAgentOp) {
+    return op.type === "delete_node" || op.type === "delete_connections" || op.type === "run_generation";
 }
 
 function opLabel(type: string) {

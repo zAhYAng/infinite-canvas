@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { CanvasAgentOp } from "../utils/canvas-agent-ops";
+import type { CanvasAgentOp, CanvasAgentToolConfirmMode } from "../utils/canvas-agent-ops";
 
 export type AgentChatRole = "user" | "assistant" | "system" | "tool" | "error";
 export type AgentAttachment = { id: string; name: string; type: string; size: number; url: string; dataUrl: string };
@@ -27,7 +27,7 @@ type CanvasAgentStore = {
     workspacePath: string;
     loadingThreads: boolean;
     activeTab: AgentPanelTab;
-    confirmTools: boolean;
+    confirmTools: CanvasAgentToolConfirmMode;
     activity: string;
     connectError: string;
     pendingTool: AgentPendingToolCall | null;
@@ -54,7 +54,7 @@ export const useCanvasAgentStore = create<CanvasAgentStore>((set) => ({
     workspacePath: "",
     loadingThreads: false,
     activeTab: "setup",
-    confirmTools: true,
+    confirmTools: "off",
     activity: "就绪",
     connectError: "",
     pendingTool: null,

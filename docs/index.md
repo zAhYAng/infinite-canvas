@@ -17,6 +17,8 @@
 ## 开发与数据
 
 - [本地开发](/docs/backend/local-development)
+- [v2api 图像与视频生成 API 文档](/docs/backend/api对接文档)
+- [TTAPI 视频渠道兼容改造方案](/docs/backend/ttapi-video-adapter-plan)
 - [画布数据结构](/docs/backend/canvas-data-structure)
 
 ## 商务合作

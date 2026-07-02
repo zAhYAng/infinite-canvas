@@ -4,6 +4,8 @@
   "defaultOpen": true,
   "pages": [
     "local-development",
+    "api对接文档",
+    "ttapi-video-adapter-plan",
     "canvas-data-structure"
   ]
 }

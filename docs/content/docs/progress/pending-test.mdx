@@ -5,6 +5,7 @@ description: 当前版本已实现但仍需人工验证的变更项
 
 # 待测试
 
+- 画布视频节点：底部生成按钮改为固定显示“生成”并避免与视频设置按钮重叠；`grok-imagine-video` 等聊天兼容视频模型会带上画布里选择的秒数，并对 aicost Grok 视频补齐 `prompt`、`size`、`resolution_name`、`video_config`、`metadata.video_config` 等兼容字段；普通 `grok-imagine-video` 选择 15s 时会按上游支持规格转为 16s，需确认线上返回约 16 秒视频。
 - 配置与用户偏好：每个模型渠道新增 OpenAI / Gemini 调用格式选择，默认 OpenAI，切换默认格式时同步更新默认 Base URL；渠道 Tab 增加紧凑醒目的提醒，说明模型是否可选需要到“模型”Tab 选择。
 - Gemini 调用格式：支持拉取 Gemini 模型列表，并用于文本问答、在线 Agent 工具调用、基础生图和图生图请求。
 - 音频和视频生成：选择 Gemini 调用格式时先给出不支持提示，仍需使用 OpenAI 兼容渠道。
@@ -14,4 +15,5 @@ description: 当前版本已实现但仍需人工验证的变更项
 - grok 视频兼容：`grok-imagine-video` 返回的 HTTP 视频文件地址会通过同源 `/api/video-proxy` 代理播放，需确认 HTTPS 页面不会因混合内容拦截导致无法预览。
 - Codex 插件接入：参考 Cowart 方式新增 `v2api-infinite-canvas` 插件清单、MCP 启动脚本和两个技能说明，需在 Codex 插件环境中确认可加载 `infinite-canvas` MCP，并能在已连接的 `image.v2api.top` 画布中创建/修改节点。
 - Codex 新电脑接入：新增不依赖项目源码的 V2API 画布连接文档，并让个人插件启动脚本在没有项目源码时自动回退到 `npx @basketikun/canvas-agent`；文档明确 Codex 有浏览器控制能力时应自动完成网页 Agent 连接，需在新电脑按文档验证 MCP 注册、插件启动、自动连接和手动兜底流程。
+- 本地 Agent 工具确认：工具确认改为“关 / 风险 / 全部”三档，默认关闭确认；普通新增、更新、移动、连接、选择和视图调整会自动执行，如切到“风险”则只拦截删除节点、删除连线和触发生成等高风险操作，出现待确认操作时自动切到对话页展示确认卡；本地 Agent 首次连接成功后自动收起右侧 Agent 面板。
 - 画布生图稳定性：图片生成和编辑服务层不再用画布取消信号中断底层图片 API 请求，主生图和图片重试会在请求返回后丢弃已取消结果；V2API `/images/generations` 走同源长耗时代理并发送心跳，避免 100 秒以上生图在浏览器侧 60 秒断开；NewAPI 返回的公网 HTTP 静态生成图 URL 走同源图片代理，避免 HTTPS 页面 fetch 图片时出现 `Failed to fetch`；批量图片生成全部失败时保留首个具体错误信息，需确认配置节点和批量根节点不再只显示“全部图片生成失败”。
