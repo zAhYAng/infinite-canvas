@@ -5,14 +5,15 @@ import { Image as ImageIcon, LoaderCircle, MessageSquare, Music2, Play, Settings
 import { Button, Segmented } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
-import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { defaultConfig, IMAGE_GENERATION_MAX_COUNT, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { CreditSymbol, requestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasAudioSettingsPopover, type CanvasAudioSettingKey } from "./canvas-audio-settings-popover";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
-import type { CanvasGenerationMode, CanvasNodeData, CanvasNodeMetadata } from "../types";
+import type { CanvasGenerationMode, CanvasNodeData, CanvasNodeMetadata, CanvasStoryboardWorkflow } from "../types";
+import { preflightGeneration } from "../utils/generation-preflight";
 
 type CanvasConfigNodePanelProps = {
     node: CanvasNodeData;
@@ -22,20 +23,25 @@ type CanvasConfigNodePanelProps = {
     onGenerate: (nodeId: string) => void;
     onStop: (nodeId: string) => void;
     onComposerToggle: () => void;
+	onRunStoryboard?: (workflow: CanvasStoryboardWorkflow) => void;
+	onSelectStoryboardImage?: (workflow: CanvasStoryboardWorkflow, imageNodeId: string) => void;
 };
 
-export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigChange, onGenerate, onStop, onComposerToggle }: CanvasConfigNodePanelProps) {
+export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigChange, onGenerate, onStop, onComposerToggle, onRunStoryboard, onSelectStoryboardImage }: CanvasConfigNodePanelProps) {
     const globalConfig = useEffectiveConfig();
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = node.metadata?.generationMode || "image";
     const config = buildNodeConfig(globalConfig, node, mode);
-    const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const count = Math.max(1, Math.min(IMAGE_GENERATION_MAX_COUNT, Math.floor(Math.abs(Number(config.count)) || 1)));
     const credits = requestCreditCost({ channelMode: config.channelMode, model: config.model, count: mode === "image" ? count : 1 });
     const chipStyle = { background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text };
     const hasAnyInput = Boolean(inputSummary.textCount || inputSummary.imageCount || inputSummary.videoCount || inputSummary.audioCount);
     const hasComposerContent = Boolean((node.metadata?.composerContent ?? node.metadata?.prompt ?? "").trim());
     const canGenerate = hasComposerContent || (mode === "audio" ? inputSummary.textCount > 0 : hasAnyInput);
+	const preflight = mode === "image" || mode === "video" ? preflightGeneration({ config, mode, prompt: node.metadata?.composerContent ?? node.metadata?.prompt ?? "", referenceCount: inputSummary.imageCount, videoReferenceCount: inputSummary.videoCount, audioReferenceCount: inputSummary.audioCount }) : null;
+    const blockingDiagnostic = preflight?.strict && !preflight.valid ? preflight.diagnostics[0] : null;
+	const workflow = node.metadata?.workflow;
 
     return (
         <div className="flex h-full w-full cursor-move flex-col px-3 pb-3 pt-7 text-sm" style={{ color: theme.node.text }} onWheel={(event) => event.stopPropagation()}>
@@ -110,12 +116,13 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                     <CanvasAudioSettingsPopover config={config} placement="topRight" buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, audioConfigPatch(key, value))} />
                 ) : null}
             </div>
+			{workflow ? <StoryboardWorkflowControls workflow={workflow} theme={theme} onRun={() => onRunStoryboard?.(workflow)} onSelect={(imageNodeId) => onSelectStoryboardImage?.(workflow, imageNodeId)} /> : null}
 
             <Button
                 type="primary"
                 className="mt-auto !h-9 !w-full !cursor-pointer !rounded-lg"
                 danger={isRunning}
-                disabled={!isRunning && !canGenerate}
+				disabled={!isRunning && (!canGenerate || Boolean(blockingDiagnostic))}
                 onMouseDown={(event) => event.stopPropagation()}
                 onClick={() => (isRunning ? onStop(node.id) : onGenerate(node.id))}
             >
@@ -138,8 +145,21 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                     )}
                 </span>
             </Button>
+			{blockingDiagnostic ? <div className="mt-2 text-xs" style={{ color: theme.node.muted }}>{blockingDiagnostic.message}</div> : null}
         </div>
     );
+}
+
+function StoryboardWorkflowControls({ workflow, theme, onRun, onSelect }: { workflow: CanvasStoryboardWorkflow; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onRun: () => void; onSelect: (imageNodeId: string) => void }) {
+	if (workflow.state === "awaiting_confirmation") return <Button className="mb-2 !h-9 !w-full !rounded-lg" onMouseDown={(event) => event.stopPropagation()} onClick={onRun}>确认生成 4 张分镜</Button>;
+	if (workflow.state === "awaiting_selection") return <div className="mb-2 space-y-1.5" onMouseDown={(event) => event.stopPropagation()}>
+		<div className="text-xs" style={{ color: theme.node.muted }}>选择主图后将生成视频</div>
+		<div className="grid grid-cols-2 gap-1.5">{workflow.imageNodeIds.map((id, index) => <Button key={id} size="small" className="!h-8 !rounded-md" onClick={() => onSelect(id)}>镜头 {index + 1}</Button>)}</div>
+	</div>;
+	if (workflow.state === "running") return <div className="mb-2 text-xs" style={{ color: theme.node.muted }}>工作流正在生成</div>;
+	if (workflow.state === "completed") return <div className="mb-2 text-xs" style={{ color: theme.node.muted }}>工作流已完成</div>;
+	if (workflow.state === "failed") return <div className="mb-2 text-xs" style={{ color: theme.node.muted }}>{workflow.error || "工作流未完成"}</div>;
+	return null;
 }
 
 function InputChip({ label, value, style }: { label: string; value: string; style: CSSProperties }) {

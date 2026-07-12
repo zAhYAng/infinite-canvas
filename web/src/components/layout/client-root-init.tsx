@@ -7,6 +7,7 @@ import { App, Button, Spin } from "antd";
 import { createModelChannel, encodeChannelModel, modelMatchesCapability, useConfigStore, type AiConfig, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { IS_V2API_MANAGED, V2API_BASE_URL } from "@/constant/env";
 import { exchangeCanvasHandoff, type CanvasHandoffChannel } from "@/services/api/handoff";
+import { preloadCanvasCapabilities } from "@/services/api/canvas-capabilities";
 
 function encodedModels(channelId: string, models: string[], capability?: ModelCapability) {
     return models
@@ -109,6 +110,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
                     updateConfig("videoModel", firstEncodedHandoffModel(rawChannels, channels, "video"));
                     updateConfig("audioModel", firstEncodedHandoffModel(rawChannels, channels, "audio"));
                     updateConfig("textModel", firstEncodedHandoffModel(rawChannels, channels, "text"));
+					void preloadCanvasCapabilities(channels);
                     setShowV2ApiGuide(false);
                     message.success("已连接 v2api 无限画布");
                 })

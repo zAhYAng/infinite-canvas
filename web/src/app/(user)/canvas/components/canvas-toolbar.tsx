@@ -18,6 +18,7 @@ export function CanvasToolbar({
     onAddAudio,
     onAddText,
     onAddConfig,
+    onAddGroup,
     onUndo,
     onRedo,
     onUpload,
@@ -38,6 +39,7 @@ export function CanvasToolbar({
     onAddAudio: () => void;
     onAddText: () => void;
     onAddConfig: () => void;
+    onAddGroup: () => void;
     onUndo: () => void;
     onRedo: () => void;
     onUpload: () => void;
@@ -89,6 +91,9 @@ export function CanvasToolbar({
                 </ToolbarButton>
                 <ToolbarButton id="tool-config" label="生成配置" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddConfig}>
                     <Settings2 className="size-4.5" />
+                </ToolbarButton>
+                <ToolbarButton id="tool-group" label="分组" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddGroup}>
+                    <Square className="size-4.5" />
                 </ToolbarButton>
                 <ToolbarButton id="tool-upload" label="上传素材" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onUpload}>
                     <Upload className="size-4.5" />

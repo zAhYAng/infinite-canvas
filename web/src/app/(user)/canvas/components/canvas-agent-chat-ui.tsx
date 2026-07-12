@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, Tooltip } from "antd";
 import { ArrowUp, CheckCircle2, CircleAlert, ImagePlus, LoaderCircle, UserRound, Wrench, X, XCircle } from "lucide-react";
+import { Streamdown } from "streamdown";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { isPlainEnterKey } from "@/lib/keyboard-event";
 import type { LocalUser } from "@/stores/use-user-store";
 
 export type CanvasAgentChatAttachment = { id: string; name: string; url: string };
@@ -17,6 +19,7 @@ export type CanvasAgentChatMessage = {
     meta?: string;
     detail?: unknown;
     attachments?: CanvasAgentChatAttachment[];
+    streamId?: string;
 };
 
 const WORKING_TEXT = "working...";
@@ -48,7 +51,7 @@ export function AgentChatMessage({ item, theme, user, onRejectTool, onApproveToo
         <div className={`flex items-start gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
             {!isUser ? <AgentAvatar theme={theme} /> : null}
             <div className={`min-w-0 max-w-[82%] text-sm leading-6 ${isUser ? "text-right" : "text-left"}`} style={{ color }}>
-                <div className="whitespace-pre-wrap break-words text-left">{item.text}</div>
+                {isUser ? <div className="whitespace-pre-wrap break-words text-left">{item.text}</div> : <Streamdown animated isAnimating={Boolean(item.streamId)}>{item.text}</Streamdown>}
                 {item.attachments?.length ? <AgentMessageAttachments attachments={item.attachments} /> : null}
                 {item.meta ? <div className="mt-1 text-[11px] opacity-45">{item.meta}</div> : null}
             </div>
@@ -200,7 +203,7 @@ export function AgentChatComposer({
                         void onAddFiles(images);
                     }}
                     onKeyDown={(event) => {
-                        if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey) return;
+                        if (!isPlainEnterKey(event)) return;
                         event.preventDefault();
                         void onSubmit();
                     }}

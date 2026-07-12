@@ -14,6 +14,7 @@ import {
     createModelChannel,
     defaultBaseUrlForApiFormat,
     filterModelsByCapability,
+    IMAGE_GENERATION_MAX_COUNT,
     modelOptionLabel,
     modelOptionsFromChannels,
     normalizeModelOptionValue,
@@ -375,7 +376,7 @@ export function AppConfigModal() {
                                         <Input
                                             type="number"
                                             min={1}
-                                            max={15}
+                                            max={IMAGE_GENERATION_MAX_COUNT}
                                             value={config.canvasImageCount}
                                             onChange={(event) => updateConfig("canvasImageCount", event.target.value)}
                                             onBlur={(event) => updateConfig("canvasImageCount", normalizeImageCount(event.target.value))}
@@ -505,7 +506,7 @@ function normalizeDefaultModel(value: string, options: string[]) {
 }
 
 function normalizeImageCount(value: string) {
-    return String(Math.max(1, Math.min(15, Math.floor(Math.abs(Number(value)) || 3))));
+    return String(Math.max(1, Math.min(IMAGE_GENERATION_MAX_COUNT, Math.floor(Math.abs(Number(value)) || 3))));
 }
 
 function uniqueModels(models: string[]) {

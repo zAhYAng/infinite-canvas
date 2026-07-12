@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu } from "lucide-react";
+import { Bot, Menu } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -10,10 +10,12 @@ import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { useCanvasAgentStore } from "@/app/(user)/canvas/stores/use-canvas-agent-store";
 
 export function AppTopNav() {
     const pathname = usePathname();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const setAgentState = useCanvasAgentStore((state) => state.setAgentState);
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
@@ -37,6 +39,7 @@ export function AppTopNav() {
 
                             <button
                                 type="button"
+                                data-home-navigation="menu"
                                 className="ml-3 inline-flex size-8 shrink-0 items-center justify-center text-stone-600 transition hover:text-stone-950 md:hidden dark:text-stone-300 dark:hover:text-white"
                                 onClick={() => setMobileNavOpen(true)}
                                 aria-label="打开导航菜单"
@@ -53,6 +56,7 @@ export function AppTopNav() {
                                         <Link
                                             key={tool.slug}
                                             href={`/${tool.slug}`}
+                                            data-home-navigation={tool.slug}
                                             className={cn(
                                                 "relative flex h-16 shrink-0 items-center gap-2 text-sm leading-6 transition after:absolute after:inset-x-0 after:bottom-0 after:h-px",
                                                 active
@@ -69,6 +73,9 @@ export function AppTopNav() {
                         </div>
 
                         <div className="my-auto flex h-9 min-w-0 items-center justify-end gap-2 justify-self-end whitespace-nowrap">
+                            <button type="button" className="inline-flex size-8 items-center justify-center rounded-md text-stone-500 transition hover:bg-stone-100 hover:text-stone-950 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100" onClick={() => setAgentState({ panelOpen: true })} aria-label="打开 Agent" title="打开 Agent">
+                                <Bot className="size-4" />
+                            </button>
                             <UserStatusActions />
                         </div>
                     </div>

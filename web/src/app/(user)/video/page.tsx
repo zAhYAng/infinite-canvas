@@ -16,12 +16,14 @@ import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
-import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
+import { createVideoGenerationTask, pollVideoGenerationTask, recreateVideoTaskAfterFailure, shouldRetryVideoTaskFailure, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
+import { preflightGeneration } from "@/app/(user)/canvas/utils/generation-preflight";
+import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 
 type GeneratedVideo = {
     id: string;
@@ -58,6 +60,7 @@ type GenerationLog = {
     seconds: string;
     status: "生成中" | "成功" | "失败";
     task?: VideoGenerationTask;
+    retryCount?: number;
     video?: GeneratedVideo;
     error?: string;
 };
@@ -95,6 +98,9 @@ export default function VideoPage() {
     const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
     const [previewLog, setPreviewLog] = useState<GenerationLog | null>(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const processedAgentActionsRef = useRef(new Set<string>());
+    const videoAction = useWorkbenchAgentStore((state) => state.videoAction);
+    const clearVideoAction = useWorkbenchAgentStore((state) => state.clearVideo);
 
     const model = effectiveConfig.videoModel || effectiveConfig.model;
     const canGenerate = Boolean(prompt.trim());
@@ -108,6 +114,14 @@ export default function VideoPage() {
     useEffect(() => {
         void refreshLogs();
     }, []);
+
+    useEffect(() => {
+        if (!videoAction || processedAgentActionsRef.current.has(videoAction.id)) return;
+        processedAgentActionsRef.current.add(videoAction.id);
+        setPrompt(videoAction.prompt);
+        clearVideoAction(videoAction.id);
+        if (videoAction.run) window.setTimeout(() => void generate(videoAction.prompt), 0);
+    }, [clearVideoAction, videoAction]);
 
     const addReferences = async (files?: FileList | null) => {
         const selectedFiles = Array.from(files || []);
@@ -166,8 +180,8 @@ export default function VideoPage() {
             message.error("剪切板里没有可读取的图片");
         }
     };
-    const generate = async () => {
-        const snapshot = buildRequestSnapshot();
+    const generate = async (promptOverride?: string) => {
+        const snapshot = buildRequestSnapshot(promptOverride);
         if (!snapshot) return;
         setElapsedMs(0);
         setRunning(true);
@@ -189,8 +203,8 @@ export default function VideoPage() {
         }
     };
 
-    const buildRequestSnapshot = () => {
-        const text = prompt.trim();
+    const buildRequestSnapshot = (promptValue?: string) => {
+        const text = (promptValue ?? prompt).trim();
         if (!text) {
             message.error("请输入视频提示词");
             return null;
@@ -205,7 +219,13 @@ export default function VideoPage() {
             message.error(`${videoReferenceError}。${seedanceVideoReferenceHint}`);
             return null;
         }
-        return { text, config: buildVideoConfig(effectiveConfig, model), references: [...references], videoReferences: [...videoReferences], audioReferences: [...audioReferences] };
+        const requestConfig = buildVideoConfig(effectiveConfig, model);
+        const plan = preflightGeneration({ config: requestConfig, mode: "video", prompt: text, references, videoReferenceCount: videoReferences.length, audioReferenceCount: audioReferences.length });
+        if (!plan.valid) {
+            message.error(plan.diagnostics.map((item) => item.message).join("；") || "Invalid generation parameters");
+            return null;
+        }
+        return { text, config: requestConfig, references: [...references], videoReferences: [...videoReferences], audioReferences: [...audioReferences] };
     };
 
     const retryResult = () => {
@@ -292,34 +312,46 @@ export default function VideoPage() {
         setStartedAt((value) => value || performance.now());
         setResults((value) => (value.length ? value : [{ id: log.id, status: "pending" }]));
         const taskConfig = buildVideoConfig({ ...effectiveConfig, ...log.config }, log.task.model || log.model);
+        let activeLog = log;
+        let activeTask = log.task;
         try {
             for (let attempt = 0; attempt < 120; attempt += 1) {
-                const state = await pollVideoGenerationTask(configOverride || taskConfig, log.task);
+                const state = await pollVideoGenerationTask(configOverride || taskConfig, activeTask);
                 if (state.status === "completed") {
                     const stored = await storeGeneratedVideo(state.result);
                     const nextVideo: GeneratedVideo = {
                         id: nanoid(),
                         url: stored.url,
                         storageKey: stored.storageKey,
-                        durationMs: Date.now() - log.createdAt,
+                        durationMs: Date.now() - activeLog.createdAt,
                         width: stored.width || 1280,
                         height: stored.height || 720,
                         bytes: stored.bytes,
                         mimeType: stored.mimeType,
                     };
                     setResults([{ id: nextVideo.id, status: "success", video: nextVideo }]);
-                    await saveLog({ ...log, status: "成功", durationMs: nextVideo.durationMs, video: nextVideo, error: undefined });
+                    await saveLog({ ...activeLog, status: "成功", durationMs: nextVideo.durationMs, video: nextVideo, error: undefined });
                     message.success("视频已生成");
                     return;
                 }
-                if (state.status === "failed") throw new Error(state.error);
+                if (state.status === "failed") {
+                    const retryCount = activeLog.retryCount || 0;
+                    if (retryCount < 1 && shouldRetryVideoTaskFailure(activeTask, state.error)) {
+                        activeTask = await recreateVideoTaskAfterFailure(configOverride || taskConfig, activeLog.prompt, activeLog.references, activeLog.videoReferences, activeLog.audioReferences, activeTask, state.error);
+                        activeLog = { ...activeLog, task: activeTask, retryCount: retryCount + 1, error: undefined };
+                        await saveLog(activeLog);
+                        message.info("上游任务暂时失败，正在自动重试（1/1）");
+                        continue;
+                    }
+                    throw new Error(`${state.error}${retryCount ? "已自动重新创建 1 次任务，仍未成功。" : ""}`);
+                }
                 if (attempt === 119) throw new Error("视频生成超时，请稍后重试");
-                await delay(log.task.provider === "seedance" ? 5000 : 2500);
+                await delay(activeTask.provider === "seedance" ? 5000 : 2500);
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "生成失败";
-            setResults([{ id: log.id, status: "failed", error: errorMessage }]);
-            await saveLog({ ...log, status: "失败", durationMs: Date.now() - log.createdAt, error: errorMessage });
+            setResults([{ id: activeLog.id, status: "failed", error: errorMessage }]);
+            await saveLog({ ...activeLog, status: "失败", durationMs: Date.now() - activeLog.createdAt, error: errorMessage });
             message.error(errorMessage);
         } finally {
             activeLogIdsRef.current.delete(log.id);
@@ -517,7 +549,7 @@ export default function VideoPage() {
                 </div>
             </Drawer>
             <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
-            <AssetPickerModal open={assetPickerOpen} defaultTab="my-assets" onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />
+            <AssetPickerModal open={assetPickerOpen} onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />
             <Modal title="删除生成记录" open={deleteConfirmOpen} onCancel={() => setDeleteConfirmOpen(false)} onOk={deleteSelectedLogs} okText="删除" okButtonProps={{ danger: true }} cancelText="取消">
                 确定删除选中的 {selectedLogIds.length} 条生成记录吗？
             </Modal>

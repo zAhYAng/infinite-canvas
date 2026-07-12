@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ChevronRight, Image as ImageIcon, Music2, RefreshCw, Star, Video } from "lucide-react";
+import { ChevronRight, Image as ImageIcon, Layers3, Music2, RefreshCw, Star, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes } from "@/lib/image-utils";
@@ -111,6 +111,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const hasAudioContent = data.type === CanvasNodeType.Audio && Boolean(data.metadata?.content);
     const isBatchRoot = data.type === CanvasNodeType.Image && Boolean(data.metadata?.isBatchRoot) && batchCount > 1;
     const isBatchChild = data.type === CanvasNodeType.Image && Boolean(data.metadata?.batchRootId);
+    const isGroup = data.type === CanvasNodeType.Group;
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
     const imageBorderColor = isActive ? selectionBlue : isRelated && !isBatchChild ? theme.node.muted : "transparent";
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -239,7 +240,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     return (
         <div
             data-node-id={data.id}
-            className={`node-element absolute flex select-none flex-col transition-shadow duration-200 ${isSelected ? "z-50" : "z-10"}`}
+            className={`node-element absolute flex select-none flex-col transition-shadow duration-200 ${isSelected ? "z-50" : isGroup ? "z-0" : "z-10"}`}
             style={{
                 transform: `translate(${data.position.x}px, ${data.position.y}px)`,
                 width: data.width,
@@ -260,11 +261,13 @@ export const CanvasNode = React.memo(function CanvasNode({
             <div
                 className="relative h-full w-full overflow-visible rounded-3xl border-2"
                 style={{
-                    background: hasImageContent || hasVideoContent ? "transparent" : theme.node.fill,
-                    borderColor: hasImageContent ? imageBorderColor : isActive ? selectionBlue : isRelated ? theme.node.muted : theme.node.stroke,
+                    background: isGroup ? `${theme.toolbar.panel}55` : hasImageContent || hasVideoContent ? "transparent" : theme.node.fill,
+                    borderColor: isGroup ? (isActive ? selectionBlue : theme.node.muted) : hasImageContent ? imageBorderColor : isActive ? selectionBlue : isRelated ? theme.node.muted : theme.node.stroke,
+                    borderStyle: isGroup ? "dashed" : "solid",
                     boxShadow: isActive ? `0 0 0 1px ${selectionBlue}55` : isRelated && !isBatchChild ? `0 0 0 1px ${theme.node.muted}55, 0 18px 48px rgba(0,0,0,.14)` : undefined,
                 }}
                 onMouseDown={(event) => onMouseDown(event, data.id)}
+                onPointerDown={(event) => event.stopPropagation()}
                 onDoubleClick={(event) => {
                     if (isBatchRoot) {
                         event.stopPropagation();
@@ -285,7 +288,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                     className={`relative flex h-full w-full items-center justify-center rounded-[inherit] ${isBatchRoot ? "overflow-visible" : "overflow-hidden"}`}
                     style={
                         {
-                            background: hasImageContent || hasVideoContent ? "transparent" : theme.node.fill,
+                            background: isGroup ? "transparent" : hasImageContent || hasVideoContent ? "transparent" : theme.node.fill,
                             "--batch-from-x": `${batchMotion?.x || 0}px`,
                             "--batch-from-y": `${batchMotion?.y || 0}px`,
                             "--batch-from-rotate": `${6 + (batchMotion?.index || 0) * 4}deg`,
@@ -318,7 +321,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 {showImageInfo && hasImageContent ? <ImageInfoBar node={data} /> : null}
                 {resourceLabel ? <ResourceLabelBadge reference={resourceLabel} /> : null}
 
-                {!hasImageContent && !hasVideoContent && !hasAudioContent ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ background: `linear-gradient(to top, ${theme.canvas.background}66, transparent)` }} /> : null}
+                {!isGroup && !hasImageContent && !hasVideoContent && !hasAudioContent ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ background: `linear-gradient(to top, ${theme.canvas.background}66, transparent)` }} /> : null}
 
                 <ResizeHandle corner="top-left" onMouseDown={handleResizeMouseDown} />
                 <ResizeHandle corner="top-right" onMouseDown={handleResizeMouseDown} />
@@ -326,10 +329,10 @@ export const CanvasNode = React.memo(function CanvasNode({
                 <ResizeHandle corner="bottom-right" onMouseDown={handleResizeMouseDown} />
             </div>
 
-            <ConnectionHandleDot side="left" visible={hovered || isSelected || isConnecting} onMouseDown={(event) => onConnectStart(event, data.id, "target")} />
-            <ConnectionHandleDot side="right" visible={data.type !== CanvasNodeType.Config && (hovered || isSelected || isConnecting)} onMouseDown={(event) => onConnectStart(event, data.id, "source")} />
+            {!isGroup ? <ConnectionHandleDot side="left" visible={hovered || isSelected || isConnecting} onMouseDown={(event) => onConnectStart(event, data.id, "target")} /> : null}
+            {!isGroup ? <ConnectionHandleDot side="right" visible={data.type !== CanvasNodeType.Config && (hovered || isSelected || isConnecting)} onMouseDown={(event) => onConnectStart(event, data.id, "source")} /> : null}
 
-            {showPanel && renderPanel ? <div className="absolute left-1/2 top-full z-[70] w-[500px] -translate-x-1/2 pt-4">{renderPanel(data)}</div> : null}
+            {!isGroup && showPanel && renderPanel ? <div className="absolute left-1/2 top-full z-[70] w-[500px] -translate-x-1/2 pt-4">{renderPanel(data)}</div> : null}
         </div>
     );
 });
@@ -350,7 +353,19 @@ const nodeContentRenderers = {
     [CanvasNodeType.Config]: EmptyImageContent,
     [CanvasNodeType.Video]: VideoNodeContent,
     [CanvasNodeType.Audio]: AudioNodeContent,
+    [CanvasNodeType.Group]: GroupNodeContent,
 } satisfies Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode>;
+
+function GroupNodeContent({ node, theme }: NodeContentRendererProps) {
+    const count = node.metadata?.groupChildIds?.length || 0;
+    return (
+        <div className="pointer-events-none absolute left-3 top-2.5 flex items-center gap-2 text-xs font-medium" style={{ color: theme.node.muted }}>
+            <Layers3 className="size-3.5" />
+            <span>{node.title || "Group"}</span>
+            {count ? <span className="opacity-65">{count}</span> : null}
+        </div>
+    );
+}
 
 function LoadingContent({ theme }: Pick<NodeContentRendererProps, "theme">) {
     return (

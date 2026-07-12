@@ -7,6 +7,8 @@ import type { CanvasNode, CanvasNodeType, CanvasSnapshot } from "./types.js";
 
 type PendingRequest = { resolve: (value: unknown) => void; reject: (error: Error) => void };
 
+const SITE_TOOLS = new Set<ToolName>(["site_navigate", "canvas_list_projects", "workbench_image_get_config", "workbench_image_generate", "workbench_video_get_config", "workbench_video_generate", "prompts_search", "assets_list", "assets_add"]);
+
 export class CanvasSession {
     private clients = new Map<string, ServerResponse>();
     private pending = new Map<string, PendingRequest>();
@@ -30,6 +32,10 @@ export class CanvasSession {
     }
 
     updateState(body: unknown, clientId?: string) {
+        if (body && typeof body === "object" && !Array.isArray(body) && (body as Record<string, unknown>).hasCanvas === false) {
+            this.canvasState = null;
+            return;
+        }
         this.canvasState = { ...((body && typeof body === "object" && !Array.isArray(body) ? body : {}) as Record<string, unknown>), clientId } as CanvasSnapshot;
     }
 
@@ -48,6 +54,10 @@ export class CanvasSession {
         if (!isToolName(name)) throw new Error(`未知工具：${String(name)}`);
         let tool: ToolName = name;
         let input = parseToolInput(tool, rawInput) as Record<string, unknown>;
+        if (SITE_TOOLS.has(tool)) {
+            if (!this.clients.size) throw new Error("No web client is connected");
+            return await this.requestCanvasTool(tool, input);
+        }
         const readTool = ["canvas_get_state", "canvas_get_selection", "canvas_export_snapshot"].includes(tool);
         if (readTool && (!this.clients.size || !this.canvasState)) throw new Error("当前没有已连接画布");
         if (tool === "canvas_get_state" || tool === "canvas_export_snapshot") return compactCanvasState(this.canvasState);
@@ -93,6 +103,10 @@ export class CanvasSession {
             input = { ops: generationFlowOps(input as Record<string, unknown>, this.canvasState) };
             tool = "canvas_apply_ops";
         }
+		if (tool === "canvas_create_storyboard_workflow") {
+			input = { ops: storyboardWorkflowOps(input as Record<string, unknown>, this.canvasState) };
+			tool = "canvas_apply_ops";
+		}
         if (tool === "canvas_generate_text" || tool === "canvas_generate_image" || tool === "canvas_generate_video" || tool === "canvas_generate_audio") {
             input = { ops: generationFlowOps({ ...(input as Record<string, unknown>), mode: tool.replace("canvas_generate_", ""), autoRun: true }, this.canvasState) };
             tool = "canvas_apply_ops";
@@ -222,6 +236,28 @@ function generationFlowOps(input: Record<string, unknown>, state: CanvasSnapshot
         { type: "select_nodes", ids: [configId] },
         ...(input.autoRun ? [runGenerationOp(configId, mode, tokens.join("\n"))] : []),
     ];
+}
+
+function storyboardWorkflowOps(input: Record<string, unknown>, state: CanvasSnapshot | null) {
+	const prompt = String(input.prompt || "");
+	const shots = Array.isArray(input.shots) ? input.shots.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [];
+	if (shots.length !== 4) throw new Error("shots 必须包含 4 条分镜提示词");
+	const x = Number(input.x ?? nextCanvasX(state));
+	const y = Number(input.y ?? 0);
+	const rootId = `workflow-${crypto.randomUUID()}`;
+	const imageIds = shots.map(() => `image-${crypto.randomUUID()}`);
+	const videoId = `video-${crypto.randomUUID()}`;
+	const videoPrompt = String(input.videoPrompt || `${prompt}\n\n镜头运动自然、主体稳定、电影感光影。`);
+	const references = Array.isArray(input.referenceNodeIds) ? input.referenceNodeIds.filter((id): id is string => typeof id === "string") : [];
+	const root = configNodeOp(rootId, { ...input, prompt: "", mode: "image", title: input.title || "四图分镜工作流" }, x, y);
+	root.metadata = { ...root.metadata, workflow: { id: rootId, state: "awaiting_confirmation", prompt, shotPrompts: shots, imageNodeIds: imageIds, videoNodeId: videoId, videoPrompt } };
+	return [
+		root,
+		...imageIds.map((id, index) => ({ type: "add_node", id, nodeType: "image", title: `镜头 ${index + 1}`, position: { x: x + 460 + (index % 2) * 380, y: y + Math.floor(index / 2) * 290 }, metadata: cleanRecord({ generationMode: "image", prompt: shots[index], model: input.model, size: input.size, quality: input.quality, count: 1, status: "idle" }) })),
+		{ type: "add_node", id: videoId, nodeType: "video", title: "主图成片", position: { x: x + 1240, y: y + 180 }, metadata: cleanRecord({ generationMode: "video", prompt: videoPrompt, model: input.model, size: input.size, seconds: input.seconds, vquality: input.vquality, generateAudio: input.generateAudio, watermark: input.watermark, status: "idle" }) },
+		...references.flatMap((fromNodeId) => imageIds.map((toNodeId) => ({ type: "connect_nodes", fromNodeId, toNodeId }))),
+		{ type: "select_nodes", ids: [rootId] },
+	];
 }
 
 function runGenerationOp(nodeId: string, mode: "text" | "image" | "video" | "audio", prompt?: string) {

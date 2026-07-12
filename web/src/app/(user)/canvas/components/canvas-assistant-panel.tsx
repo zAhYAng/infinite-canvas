@@ -6,7 +6,7 @@ import { Bot, Copy, Cpu, History, PanelRightClose, Plus, Settings2, Trash2, X } 
 import { Button, Modal, Segmented, Tooltip } from "antd";
 import { motion } from "motion/react";
 
-import { modelOptionName, normalizeModelOptionValue, resolveModelChannel, selectableModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { IMAGE_GENERATION_MAX_COUNT, modelOptionName, normalizeModelOptionValue, resolveModelChannel, selectableModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { nanoid } from "nanoid";
 import { requestToolResponse, type ResponseFunctionTool, type ResponseInputMessage, type ResponseToolCall } from "@/services/api/image";
@@ -19,7 +19,6 @@ import { DiaTextReveal } from "@/components/ui/dia-text-reveal";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { CanvasPromptLibrary } from "./canvas-prompt-library";
 import { AgentChatComposer, AgentChatMessage, AgentModeSwitch, AgentPanelTabs, AgentWorkingMessage, type CanvasAgentChatMessage, type CanvasAgentMode } from "./canvas-agent-chat-ui";
-import { CanvasLocalAgentPanel } from "./canvas-local-agent-panel";
 import { NODE_DEFAULT_SIZE } from "../constants";
 import { CanvasNodeType, type CanvasAssistantMessage, type CanvasAssistantReference, type CanvasAssistantSession, type CanvasNodeData } from "../types";
 import { useCanvasAgentStore } from "../stores/use-canvas-agent-store";
@@ -29,11 +28,11 @@ export const CANVAS_AGENT_PANEL_MOTION_MS = 500;
 const PANEL_MOTION_SECONDS = CANVAS_AGENT_PANEL_MOTION_MS / 1000;
 const ONLINE_AGENT_MAX_STEPS = 4;
 const ONLINE_AGENT_PROMPT =
-    "你是 Infinite Canvas 网页内置在线画布助手。当前画布 JSON 会随用户消息提供。首轮必须调用工具：只读问题调用 canvas_get_state，需要改动画布时调用和本地 Agent 一致的 infinite-canvas 工具。需要生成内容时直接调用 canvas_generate_text、canvas_generate_image、canvas_generate_video、canvas_generate_audio 或 canvas_create_generation_flow；需要精确批量操作时调用 canvas_apply_ops。不要输出 JSON ops，不要编造执行结果。工具参数涉及已有节点时必须使用当前画布 JSON 中真实存在的 id；缺少必要 id 或用户意图不明确时直接说明需要用户明确选择或说明，不要猜测。工具返回结果后，再根据真实结果回答用户。";
+    "你是 Infinite Canvas 网页内置在线画布助手。当前画布 JSON 会随用户消息提供。首轮必须调用工具：只读问题调用 canvas_get_state，需要改动画布时调用和本地 Agent 一致的 infinite-canvas 工具。用户要求一句话加图片产出图组和视频时，先拆成四条有镜头职责的分镜提示词，再调用 canvas_create_storyboard_workflow；它只创建待确认工作流，不直接产生付费任务。普通生成使用 canvas_generate_text、canvas_generate_image、canvas_generate_video、canvas_generate_audio 或 canvas_create_generation_flow；需要精确批量操作时调用 canvas_apply_ops。不要输出 JSON ops，不要编造执行结果。工具参数涉及已有节点时必须使用当前画布 JSON 中真实存在的 id；缺少必要 id 或用户意图不明确时直接说明需要用户明确选择或说明，不要猜测。工具返回结果后，再根据真实结果回答用户。";
 const JSON_RECORD_SCHEMA = { type: "object", additionalProperties: true };
 const POSITION_SCHEMA = { type: "object", properties: { x: { type: "number" }, y: { type: "number" } }, required: ["x", "y"], additionalProperties: false };
 const VIEWPORT_SCHEMA = { type: "object", properties: { x: { type: "number" }, y: { type: "number" }, k: { type: "number" } }, required: ["x", "y", "k"], additionalProperties: false };
-const NODE_TYPE_SCHEMA = { type: "string", enum: ["image", "text", "config", "video", "audio"] };
+const NODE_TYPE_SCHEMA = { type: "string", enum: ["image", "text", "config", "video", "audio", "group"] };
 const GENERATION_MODE_SCHEMA = { type: "string", enum: ["text", "image", "video", "audio"] };
 const GENERATION_OPTION_PROPERTIES = {
     model: { type: "string" },
@@ -95,12 +94,13 @@ const ONLINE_AGENT_TOOLS: ResponseFunctionTool[] = [
     toolDefinition("canvas_get_selection", "读取当前网页画布选中的节点。", {}),
     toolDefinition("canvas_export_snapshot", "导出当前画布快照，用于理解布局。", {}),
     toolDefinition("canvas_apply_ops", "批量操作当前网页画布。ops 支持 add_node、update_node、delete_node、delete_connections、connect_nodes、set_viewport、select_nodes、run_generation。", { ops: { type: "array", items: CANVAS_OP_SCHEMA } }, ["ops"], false),
-    toolDefinition("canvas_create_node", "创建任意类型节点：text、image、config、video、audio。适合创建占位图、媒体占位、配置节点或自定义 metadata 节点。", { nodeType: NODE_TYPE_SCHEMA, title: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" }, metadata: JSON_RECORD_SCHEMA }, ["nodeType"]),
+    toolDefinition("canvas_create_node", "创建任意类型节点：text、image、config、video、audio、group。group 只用于组织画布内容。", { nodeType: NODE_TYPE_SCHEMA, title: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" }, metadata: JSON_RECORD_SCHEMA }, ["nodeType"]),
     toolDefinition("canvas_create_text_node", "在当前画布创建单个文本节点。", { text: { type: "string" }, x: { type: "number" }, y: { type: "number" }, title: { type: "string" }, width: { type: "number" }, height: { type: "number" } }),
     toolDefinition("canvas_create_text_nodes", "批量创建文本节点，适合生成标题、段落、脚本、说明等内容块。", { items: { type: "array", minItems: 1, items: { type: "object", properties: { text: { type: "string" }, title: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["text"], additionalProperties: false } }, x: { type: "number" }, y: { type: "number" }, gap: { type: "number" }, direction: { type: "string", enum: ["row", "column"] } }, ["items"]),
     toolDefinition("canvas_create_config_node", "创建生成配置节点，可指定 text/image/video/audio 模式和生成参数，可选择立即触发生成。", { prompt: { type: "string" }, mode: GENERATION_MODE_SCHEMA, title: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" }, autoRun: { type: "boolean" }, ...GENERATION_OPTION_PROPERTIES }),
     toolDefinition("canvas_create_image_prompt_flow", "创建提示词文本节点和图片生成配置节点，并自动连线，可选择立即触发生图。", { prompt: { type: "string" }, x: { type: "number" }, y: { type: "number" }, autoRun: { type: "boolean" }, ...GENERATION_OPTION_PROPERTIES }, ["prompt"]),
     generationToolDefinition("canvas_create_generation_flow", "创建通用生成流程：提示词文本节点、生成配置节点、参考节点连线，可用于文案、生图、视频或音频。"),
+    storyboardToolDefinition(),
     generationToolDefinition("canvas_generate_text", "创建通用文本生成流程并立即触发生成。", "text"),
     generationToolDefinition("canvas_generate_image", "创建通用图片生成流程并立即触发生成。", "image"),
     generationToolDefinition("canvas_generate_video", "创建通用视频生成流程并立即触发生成。", "video"),
@@ -568,21 +568,25 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, snapshot, session
                             ))}
                         </div>
                     ) : null}
-                    <AgentChatComposer
-                        prompt={prompt}
-                        sending={isRunning}
-                        placeholder="描述你想让 Agent 如何操作画布"
-                        theme={theme}
-                        onPromptChange={setPrompt}
-                        onSubmit={submit}
-                        onAddFiles={addImagesToCanvas}
-                        left={
-                            <>
-                                <CanvasPromptLibrary onSelect={setPrompt} />
-                                <AgentTextModelPicker config={effectiveConfig} value={effectiveConfig.textModel} onChange={(model) => updateConfig("textModel", model)} />
-                            </>
-                        }
-                    />
+                    <div data-onboarding="canvas-agent-composer">
+                        <AgentChatComposer
+                            prompt={prompt}
+                            sending={isRunning}
+                            placeholder="描述你想让 Agent 如何操作画布"
+                            theme={theme}
+                            onPromptChange={setPrompt}
+                            onSubmit={submit}
+                            onAddFiles={addImagesToCanvas}
+                            left={
+                                <>
+                                    <CanvasPromptLibrary onSelect={setPrompt} />
+                                    <span data-onboarding="canvas-agent-model">
+                                        <AgentTextModelPicker config={effectiveConfig} value={effectiveConfig.textModel} onChange={(model) => updateConfig("textModel", model)} />
+                                    </span>
+                                </>
+                            }
+                        />
+                    </div>
                 </>
             ) : null}
 
@@ -663,14 +667,10 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, snapshot, session
                     </div>
                 </header>
                 {agentMode === "local" ? (
-                    <CanvasLocalAgentPanel
-                        embedded
-                        snapshot={snapshot}
-                        canUndoOps={canUndoOps}
-                        onApplyOps={onApplyOps}
-                        onUndoOps={onUndoOps}
-                        onConnected={collapse}
-                    />
+                    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-8 text-center" style={{ color: theme.node.muted }}>
+                        <div className="max-w-sm text-sm leading-6">本地 Agent 已升级为全站面板，可跨画布、生成工作台、提示词和素材页面持续使用。</div>
+                        <Button type="primary" onClick={() => setAgentState({ panelOpen: true })}>打开全站 Agent</Button>
+                    </div>
                 ) : (
                     onlineContent
                 )}
@@ -815,7 +815,7 @@ function OnlineAgentLogView({ logs, theme, context, onClear }: { logs: OnlineAge
     const content = mode === "text" ? formatOnlineLogText(logs, context) : formatOnlineLogJson(logs, context);
     const lastError = [...logs].reverse().find((item) => /错误|失败|error/i.test(`${item.title}\n${stringifyLog(item.data)}`));
     const copy = async (value = content) => {
-        if (copyToClipboard(value)) return;
+        if (await copyToClipboard(value)) return;
         textareaRef.current?.focus();
         textareaRef.current?.select();
     };
@@ -970,6 +970,7 @@ function onlineToolToOps(name: string, input: Record<string, unknown>, snapshot:
         return [configNodeOp(configId, input, numberOr(input.x, nextCanvasX(snapshot)), numberOr(input.y, 0), config), ...(input.autoRun ? [runGenerationOp(configId, mode, stringOptional(input.prompt))] : [])];
     }
     if (name === "canvas_create_generation_flow") return generationFlowOps(input, snapshot, config);
+    if (name === "canvas_create_storyboard_workflow") return storyboardWorkflowOps(input, snapshot, config);
     if (name === "canvas_generate_text") return generationFlowOps({ ...input, mode: "text", autoRun: true }, snapshot, config);
     if (name === "canvas_generate_image") return generationFlowOps({ ...input, mode: "image", autoRun: true }, snapshot, config);
     if (name === "canvas_generate_video") return generationFlowOps({ ...input, mode: "video", autoRun: true }, snapshot, config);
@@ -1015,7 +1016,7 @@ function textNodeOp(input: Record<string, unknown>, x: number, y: number): Canva
     return { type: "add_node", id: stringOptional(input.id), nodeType: CanvasNodeType.Text, title: stringOptional(input.title), position: { x, y }, width: numberOptional(input.width), height: numberOptional(input.height), metadata: { content: stringOptional(input.text), status: "success", fontSize: 14 } };
 }
 
-function configNodeOp(id: string, input: Record<string, unknown>, x: number, y: number, config: AiConfig): CanvasAgentOp {
+function configNodeOp(id: string, input: Record<string, unknown>, x: number, y: number, config: AiConfig): Extract<CanvasAgentOp, { type: "add_node" }> {
     const mode = generationMode(input.mode);
     const prompt = stringOptional(input.prompt);
     return {
@@ -1094,6 +1095,7 @@ function toolCallLabel(name: string) {
     if (name === "canvas_create_config_node") return "创建生成配置";
     if (name === "canvas_create_image_prompt_flow") return "创建生图流程";
     if (name === "canvas_create_generation_flow") return "创建生成流程";
+    if (name === "canvas_create_storyboard_workflow") return "创建四图分镜工作流";
     if (name === "canvas_generate_text") return "生成文本";
     if (name === "canvas_generate_image") return "生成图片";
     if (name === "canvas_generate_video") return "生成视频";
@@ -1225,7 +1227,58 @@ function resolveGenerationModel(config: AiConfig, mode: "text" | "image" | "vide
 }
 
 function generationCount(value: string) {
-    return Math.max(1, Math.min(15, Math.floor(Math.abs(Number(value)) || 1)));
+    return Math.max(1, Math.min(IMAGE_GENERATION_MAX_COUNT, Math.floor(Math.abs(Number(value)) || 1)));
+}
+
+function storyboardWorkflowOps(input: Record<string, unknown>, snapshot: CanvasAgentSnapshot, config: AiConfig): CanvasAgentOp[] {
+    const prompt = requireString(input.prompt, "prompt");
+    const shots = requireStringArray(input.shots, "shots");
+    if (shots.length !== 4) throw new Error("shots 必须包含 4 条分镜提示词");
+    const x = numberOr(input.x, nextCanvasX(snapshot));
+    const y = numberOr(input.y, 0);
+    const rootId = `workflow-${nanoid()}`;
+    const imageIds = shots.map(() => `image-${nanoid()}`);
+    const videoId = `video-${nanoid()}`;
+    const videoPrompt = stringOptional(input.videoPrompt) || `${prompt}\n\n镜头运动自然、主体稳定、电影感光影。`;
+    const references = Array.isArray(input.referenceNodeIds) ? input.referenceNodeIds.filter((id): id is string => typeof id === "string") : [];
+    const root = configNodeOp(rootId, { ...input, prompt: "", mode: "image", title: stringOptional(input.title) || "四图分镜工作流" }, x, y, config);
+    root.metadata = {
+        ...root.metadata,
+        workflow: { id: rootId, state: "awaiting_confirmation", prompt, shotPrompts: shots, imageNodeIds: imageIds, videoNodeId: videoId, videoPrompt },
+    };
+    const imageSize = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
+    const imageModel = resolveGenerationModel(config, "image", stringOptional(input.model));
+    const videoModel = resolveGenerationModel(config, "video", "");
+    return [
+        root,
+        ...imageIds.map((id, index): CanvasAgentOp => ({
+            type: "add_node",
+            id,
+            nodeType: CanvasNodeType.Image,
+            title: `镜头 ${index + 1}`,
+            position: { x: x + NODE_DEFAULT_SIZE[CanvasNodeType.Config].width + 100 + (index % 2) * (imageSize.width + 48), y: y + Math.floor(index / 2) * (imageSize.height + 64) },
+            metadata: { generationMode: "image", prompt: shots[index], model: imageModel, size: stringOptional(input.size) || config.size, quality: stringOptional(input.quality) || config.quality, count: 1, status: "idle" },
+        })),
+        {
+            type: "add_node",
+            id: videoId,
+            nodeType: CanvasNodeType.Video,
+            title: "主图成片",
+            position: { x: x + NODE_DEFAULT_SIZE[CanvasNodeType.Config].width + imageSize.width * 2 + 220, y: y + imageSize.height / 2 },
+            metadata: { generationMode: "video", prompt: videoPrompt, model: videoModel, size: stringOptional(input.size) || config.size, seconds: stringOptional(input.seconds) || config.videoSeconds, vquality: stringOptional(input.vquality) || config.vquality, generateAudio: stringOptional(input.generateAudio) || config.videoGenerateAudio, watermark: stringOptional(input.watermark) || config.videoWatermark, status: "idle" },
+        },
+        ...references.flatMap((fromNodeId) => imageIds.map((toNodeId): CanvasAgentOp => ({ type: "connect_nodes", fromNodeId, toNodeId }))),
+        { type: "select_nodes", ids: [rootId] },
+    ];
+}
+
+function storyboardToolDefinition() {
+    return toolDefinition(
+        "canvas_create_storyboard_workflow",
+        "创建待确认的四图分镜加视频工作流。先根据用户需求写四条不同镜头提示词，用户确认后才生成图片。",
+        { prompt: { type: "string" }, shots: { type: "array", minItems: 4, maxItems: 4, items: { type: "string" } }, videoPrompt: { type: "string" }, title: { type: "string" }, x: { type: "number" }, y: { type: "number" }, referenceNodeIds: { type: "array", items: { type: "string" } }, ...GENERATION_OPTION_PROPERTIES },
+        ["prompt", "shots"],
+    );
 }
 
 function cleanRecord(value: Record<string, unknown>) {
@@ -1284,7 +1337,7 @@ async function buildToolAgentMessages(snapshot: CanvasAgentSnapshot, history: Ca
     return [
         { role: "system", content: ONLINE_AGENT_PROMPT },
         ...history
-            .filter((message) => message.role === "user" || message.role === "assistant" || message.role === "system")
+            .filter((message): message is CanvasAssistantMessage & { role: "user" | "assistant" | "system" } => message.role === "user" || message.role === "assistant" || message.role === "system")
             .slice(-8)
             .map((message): ResponseInputMessage => ({ role: message.role, content: message.text })),
         {

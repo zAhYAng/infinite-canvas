@@ -1,6 +1,8 @@
 import axios from "axios";
 
-import { buildApiUrl, resolveModelRequestConfig, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
+import { generationProfileHeaders } from "@/services/api/canvas-capabilities";
+
+import { buildApiUrl, IMAGE_GENERATION_MAX_COUNT, resolveModelRequestConfig, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
@@ -244,11 +246,12 @@ function aiApiUrl(config: AiConfig, path: string) {
     return buildApiUrl(config.baseUrl, path);
 }
 
-function aiHeaders(config: AiConfig, contentType?: string) {
-    return {
-        Authorization: `Bearer ${config.apiKey}`,
-        ...(contentType ? { "Content-Type": contentType } : {}),
-    };
+function aiHeaders(config: AiConfig, contentType?: string): Record<string, string> {
+    const headers: Record<string, string> = { Authorization: `Bearer ${config.apiKey}` };
+    const profileId = generationProfileHeaders(config, config.model)["X-NewAPI-Generation-Profile"];
+    if (profileId) headers["X-NewAPI-Generation-Profile"] = profileId;
+    if (contentType) headers["Content-Type"] = contentType;
+    return headers;
 }
 
 function shouldUseImageGenerationProxy(url: string) {
@@ -442,8 +445,9 @@ function consumeResponseStreamText(state: ResponseStreamState, text: string, onD
     for (;;) {
         const match = state.buffer.match(/\r?\n\r?\n/);
         if (!match) break;
-        consumeResponseStreamBlock(state.buffer.slice(0, match.index), state, onDelta);
-        state.buffer = state.buffer.slice(match.index + match[0].length);
+        const boundary = match.index ?? 0;
+        consumeResponseStreamBlock(state.buffer.slice(0, boundary), state, onDelta);
+        state.buffer = state.buffer.slice(boundary + match[0].length);
     }
     if (flush && state.buffer.trim()) {
         consumeResponseStreamBlock(state.buffer, state, onDelta);
@@ -590,8 +594,9 @@ function consumeGeminiStreamText(state: GeminiStreamState, text: string, onDelta
     for (;;) {
         const match = state.buffer.match(/\r?\n\r?\n/);
         if (!match) break;
-        consumeGeminiStreamBlock(state.buffer.slice(0, match.index), state, onDelta);
-        state.buffer = state.buffer.slice(match.index + match[0].length);
+        const boundary = match.index ?? 0;
+        consumeGeminiStreamBlock(state.buffer.slice(0, boundary), state, onDelta);
+        state.buffer = state.buffer.slice(boundary + match[0].length);
     }
     if (flush && state.buffer.trim()) {
         consumeGeminiStreamBlock(state.buffer, state, onDelta);
@@ -674,7 +679,7 @@ function parseGeminiImagePayload(payload: GeminiPayload) {
 
 export async function requestGeneration(config: AiConfig, prompt: string, options?: RequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
-    const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const n = Math.max(1, Math.min(IMAGE_GENERATION_MAX_COUNT, Math.floor(Math.abs(Number(config.count)) || 1)));
     if (requestConfig.apiFormat === "gemini") {
         try {
             return await requestGeminiImages(requestConfig, prompt, [], n);
@@ -711,7 +716,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
 
 export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, options?: RequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
-    const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const n = Math.max(1, Math.min(IMAGE_GENERATION_MAX_COUNT, Math.floor(Math.abs(Number(config.count)) || 1)));
     const requestPrompt = buildImageReferencePromptText(prompt, references);
     if (requestConfig.apiFormat === "gemini") {
         if (mask) throw new Error("Gemini 调用格式暂不支持蒙版编辑");

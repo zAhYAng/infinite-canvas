@@ -5,12 +5,15 @@ import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "../types";
 import { getGenerationResourceNodes } from "../utils/canvas-resource-references";
+import { nodeToAIReference, referenceNodeId } from "../utils/migrate-references";
+import type { AIReference } from "../types/reference";
 
 export type NodeGenerationContext = {
     prompt: string;
     referenceImages: ReferenceImage[];
     referenceVideos: ReferenceVideo[];
     referenceAudios: ReferenceAudio[];
+    aiReferences: AIReference[];
     textCount: number;
     imageCount: number;
     videoCount: number;
@@ -25,11 +28,12 @@ export type NodeGenerationInput = {
     image?: ReferenceImage;
     video?: ReferenceVideo;
     audio?: ReferenceAudio;
+    aiReference?: AIReference;
 };
 
 export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[], prompt: string): NodeGenerationContext {
-    const inputs = buildNodeGenerationInputs(nodeId, nodes, connections);
     const sourceNode = nodes.find((node) => node.id === nodeId);
+    const inputs = orderFirstLastFrameInputs(buildNodeGenerationInputs(nodeId, nodes, connections), sourceNode);
     if (sourceNode?.type === CanvasNodeType.Config && Boolean(sourceNode.metadata?.composerContent?.trim())) {
         return buildComposerGenerationContext(inputs, prompt);
     }
@@ -41,12 +45,14 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
     const referenceImages = inputs.map((input) => input.image).filter((image): image is ReferenceImage => Boolean(image));
     const referenceVideos = inputs.map((input) => input.video).filter((video): video is ReferenceVideo => Boolean(video));
     const referenceAudios = inputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
+    const aiReferences = inputs.map((input) => input.aiReference).filter((reference): reference is AIReference => Boolean(reference));
 
     return {
         prompt: upstreamText ? `${prompt}\n\n${upstreamText}` : prompt,
         referenceImages,
         referenceVideos,
         referenceAudios,
+        aiReferences,
         textCount: inputs.filter((input) => input.type === "text").length,
         imageCount: referenceImages.length,
         videoCount: referenceVideos.length,
@@ -87,6 +93,7 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
     const referenceImages = selectedInputs.map((input) => input.image).filter((image): image is ReferenceImage => Boolean(image));
     const referenceVideos = selectedInputs.map((input) => input.video).filter((video): video is ReferenceVideo => Boolean(video));
     const referenceAudios = selectedInputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
+    const aiReferences = selectedInputs.map((input) => input.aiReference).filter((reference): reference is AIReference => Boolean(reference));
 
     if (!hasToken) {
         return {
@@ -94,6 +101,7 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
             referenceImages: [],
             referenceVideos: [],
             referenceAudios: [],
+            aiReferences: [],
             textCount: 0,
             imageCount: 0,
             videoCount: 0,
@@ -106,6 +114,7 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
         referenceImages,
         referenceVideos,
         referenceAudios,
+        aiReferences,
         textCount: counts.text,
         imageCount: referenceImages.length,
         videoCount: referenceVideos.length,
@@ -116,15 +125,32 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
 export function buildNodeGenerationInputs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): NodeGenerationInput[] {
     return getGenerationResourceNodes(nodeId, nodes, connections).flatMap((node): NodeGenerationInput[] => {
         const image = readReferenceImage(node);
-        if (image) return [{ nodeId: node.id, type: "image" as const, title: node.title, image }];
+        if (image) return [{ nodeId: node.id, type: "image" as const, title: node.title, image, aiReference: nodeToAIReference(node) || undefined }];
         const video = readReferenceVideo(node);
-        if (video) return [{ nodeId: node.id, type: "video" as const, title: node.title, video }];
+        if (video) return [{ nodeId: node.id, type: "video" as const, title: node.title, video, aiReference: nodeToAIReference(node) || undefined }];
         const audio = readReferenceAudio(node);
-        if (audio) return [{ nodeId: node.id, type: "audio" as const, title: node.title, audio }];
+        if (audio) return [{ nodeId: node.id, type: "audio" as const, title: node.title, audio, aiReference: nodeToAIReference(node) || undefined }];
         const text = readNodeTextInput(node);
         if (text) return [{ nodeId: node.id, type: "text" as const, title: node.title, text }];
         return [];
     });
+}
+
+function orderFirstLastFrameInputs(inputs: NodeGenerationInput[], target: CanvasNodeData | undefined) {
+    if (target?.type !== CanvasNodeType.Video || target.metadata?.videoTaskType !== "first-last-frame") return inputs;
+    const references = new Map((target.metadata.references || []).map((reference) => [referenceNodeId(reference), reference]));
+    return inputs
+        .map((input, index) => {
+            const role = references.get(input.nodeId)?.role;
+            const rank = role === "first_frame" ? 0 : role === "last_frame" ? 1 : 2;
+            return {
+                input: role && input.aiReference ? { ...input, aiReference: { ...input.aiReference, role } } : input,
+                index,
+                rank,
+            };
+        })
+        .sort((left, right) => left.rank - right.rank || left.index - right.index)
+        .map((item) => item.input);
 }
 
 export function buildNodeResponseMessages(context: NodeGenerationContext): AiTextMessage[] {

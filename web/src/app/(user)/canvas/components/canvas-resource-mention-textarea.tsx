@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { isImeComposing, isPlainEnterKey } from "@/lib/keyboard-event";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 
@@ -30,6 +31,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     const [mention, setMention] = useState<MentionState | null>(null);
     const [activeIndex, setActiveIndex] = useState(0);
     const [hasSelection, setHasSelection] = useState(false);
+    const [hasFocus, setHasFocus] = useState(false);
     const candidates = useMemo(() => {
         if (!mention) return [];
         const query = mention.query.trim().toLowerCase();
@@ -100,7 +102,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         onClick?.(event);
     };
 
-    const showOverlay = Boolean(activeLabels.length && !hasSelection);
+    const showOverlay = Boolean(activeLabels.length && !hasFocus && !hasSelection);
     const mergedStyle = {
         ...(style || {}),
         color: showOverlay ? "transparent" : style?.color,
@@ -152,6 +154,10 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                 onMouseDown={handleMouseDown}
                 onClick={handleClick}
                 onKeyDown={(event) => {
+                    if (isImeComposing(event)) {
+                        onKeyDown?.(event);
+                        return;
+                    }
                     if (mention && candidates.length) {
                         if (event.key === "ArrowDown") {
                             event.preventDefault();
@@ -174,18 +180,23 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                             return;
                         }
                     }
-                    if (event.key === "Enter" && onSubmit && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+                    if (isPlainEnterKey(event) && onSubmit) {
                         event.preventDefault();
                         onSubmit();
                         return;
                     }
                     onKeyDown?.(event);
                 }}
+                onFocus={(event) => {
+                    setHasFocus(true);
+                    props.onFocus?.(event);
+                }}
                 onScroll={(event) => {
                     syncOverlayScroll();
                     props.onScroll?.(event);
                 }}
                 onBlur={(event) => {
+                    setHasFocus(false);
                     setHasSelection(false);
                     window.setTimeout(closeMention, 120);
                     props.onBlur?.(event);

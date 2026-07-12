@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 
 import { getNodeSpec } from "../constants";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata, type ViewportTransform } from "../types";
+import { detachDeletedGroups } from "./canvas-groups";
 
 export type CanvasAgentOp =
     | { type: "add_node"; id?: string; nodeType?: CanvasNodeType; title?: string; position?: { x: number; y: number }; x?: number; y?: number; width?: number; height?: number; metadata?: CanvasNodeMetadata }
@@ -71,7 +72,7 @@ export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, ops?: CanvasA
         }
         if (op.type === "delete_node") {
             const ids = new Set(op.ids || (op.id ? [op.id] : op.nodeType ? nodes.filter((node) => node.type === op.nodeType).map((node) => node.id) : []));
-            nodes = nodes.filter((node) => !ids.has(node.id));
+            nodes = detachDeletedGroups(nodes.filter((node) => !ids.has(node.id)), ids);
             connections = connections.filter((conn) => !ids.has(conn.fromNodeId) && !ids.has(conn.toNodeId));
             selectedNodeIds = selectedNodeIds.filter((id) => !ids.has(id));
         }

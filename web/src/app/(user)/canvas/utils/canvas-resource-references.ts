@@ -1,12 +1,16 @@
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import { seedanceReferenceLabel } from "@/lib/seedance-video";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "../types";
+import type { AIReference } from "../types/reference";
+import { referenceNodeId } from "./migrate-references";
 
 export type CanvasResourceKind = "image" | "video" | "audio" | "text";
 
 export type CanvasResourceReference = {
     id: string;
     nodeId: string;
+    referenceUrl?: string;
+    role?: AIReference["role"];
     kind: CanvasResourceKind;
     label: string;
     title: string;
@@ -23,6 +27,7 @@ export function buildCanvasResourceReferences(nodes: CanvasNodeData[], connectio
 }
 
 export function buildNodeMentionReferences(node: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    if (node.type === CanvasNodeType.Video && node.metadata?.references?.length) return labelAIReferences(node.metadata.references, nodes);
     return labelResourceNodes(getMentionResourceNodes(node.id, nodes, connections), true);
 }
 
@@ -73,6 +78,31 @@ function labelResourceNodes(nodes: CanvasNodeData[], active: boolean) {
                 previewUrl: node.metadata?.content,
                 text: node.type === CanvasNodeType.Text ? node.metadata?.content || node.metadata?.prompt : undefined,
                 active,
+            },
+        ];
+    });
+}
+
+function labelAIReferences(references: AIReference[], nodes: CanvasNodeData[]) {
+    const counts: Record<CanvasResourceKind, number> = { image: 0, video: 0, audio: 0, text: 0 };
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    return references.flatMap((reference): CanvasResourceReference[] => {
+        const kind = reference.kind;
+        const index = counts[kind]++;
+        const label = labelForKind(kind, index);
+        const sourceNodeId = referenceNodeId(reference);
+        const sourceNode = sourceNodeId ? nodeById.get(sourceNodeId) : undefined;
+        return [
+            {
+                id: `${reference.url}:${reference.role}:${index}`,
+                nodeId: sourceNodeId,
+                referenceUrl: reference.url,
+                role: reference.role,
+                kind,
+                label,
+                title: reference.name || sourceNode?.title || label,
+                previewUrl: sourceNode?.metadata?.content || (!reference.url.startsWith("asset://") ? reference.url : undefined),
+                active: true,
             },
         ];
     });

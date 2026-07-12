@@ -3,15 +3,28 @@ title: 待测试
 description: 当前版本已实现但仍需人工验证的变更项
 ---
 
+## New Manual Checks
+
+- Canvas groups: create a group from the toolbar, drag nodes into and out of it, drag the group with members, copy the group with its children, and delete only the group to confirm the children remain.
+- Site Agent: connect once, switch among canvas, image, video, prompts, and assets, then verify the same conversation and tool confirmation mode remain active. Confirm that `workbench_*_generate` only submits after a `run=true` tool call and the selected confirmation policy permits it.
+- Workbench validation: choose a known constrained image/video profile, enter an illegal reference count, duration, or resolution, and confirm no generation request is sent.
+- Canvas onboarding: open a canvas in a fresh browser profile and confirm the three animated steps focus the top navigation, open the online Agent composer, and then identify its text-model selector. Confirm the Agent-step controls remain above the composer on desktop and a low mobile viewport, and that Escape or the close control dismisses the guide without blocking normal canvas interactions.
+- Home navigation onboarding: open the home page in a fresh browser profile and confirm the prompt showcase is absent. On desktop, confirm the guide highlights each of the five top navigation entries in sequence and its previous, next, skip, and finish controls remain visible; on mobile, confirm it highlights the menu entry and summarizes the available workspaces.
+- Grok video recovery: use a controlled temporary upstream `429` or `5xx` response and confirm the request reuses one `Idempotency-Key` for at most three retries. Then return `Job failed, Please try again later.` from a public task and confirm exactly one new task is created after a short delay and its new ID survives refresh. Submit a parameter rejection as well and confirm no retry is made and the UI shows the upstream reason, error code, and a corrective action.
+
 # 待测试
 
-- 画布视频节点：底部生成按钮改为固定显示“生成”并避免与视频设置按钮重叠；`grok-imagine-video` 等聊天兼容视频模型会带上画布里选择的秒数，并对 aicost Grok 视频补齐 `prompt`、`size`、`resolution_name`、`video_config`、`metadata.video_config` 等兼容字段；普通 `grok-imagine-video` 选择 15s 时会按上游支持规格转为 16s，需确认线上返回约 16 秒视频。
+- 画布生图张数与拖拽交互：画布内图片设置、配置节点、在线 Agent 创建配置和实际图片生成请求统一限制在 1-20 张；节点拖拽开始时阻止外层画布指针事件继续处理，需确认拖动节点、新建节点后编辑、连线拖到空白处创建节点和画布平移互不干扰。
+- 画布视频多图与提示词编辑：五个 Grok 视频模型统一通过 v2api `/v1/videos` 异步接口提交，参考图按来源使用 `images` URL、data URI 或 multipart 文件，不再改写提示词或拼装聊天兼容字段；需确认 `grok-imagine-video` 与 fast 模型的多图参考生成生效。图片/视频节点底部提示词输入框聚焦时关闭标签高亮叠加层，需确认双击后有光标且可以在输入框中定位、选择并编辑局部文字。
+- 画布结构化参考：图片/视频节点提示面板新增参考图条，视频节点新增“文生视频 / 图生视频 / 首尾帧”模式；参考资源保存为带 `kind`、`role`、`asset://` 的结构化引用，旧画布 `references` 会自动迁移，需确认图生视频、首尾帧视频、图片编辑重试和旧项目打开后引用不丢失。
+- 画布视频节点：底部生成按钮改为固定显示“生成”并避免与视频设置按钮重叠；Grok 设置按模型限制时长、清晰度和参考图数量，提交时同时发送 `seconds`、`duration`、`size`、`aspect_ratio`、`resolution`，再通过公开任务 ID 轮询并从 `/content` 下载结果。提交草稿与公开任务 ID 会立即保存；刷新或重试只会复用原任务和幂等键，多标签页通过 Web Locks 在锁内读取最新本地项目并复用同一任务，浏览器不支持 Web Locks 时会阻止提交。待完成任务及其来源/参考节点和所属项目不能删除或替换，WebDAV 同步与旧延迟写入也不能覆盖待完成任务；已完成结果会在下一次提交读取项目前先强制落盘，旧标签页不能把它恢复成 pending。停止只结束本地轮询；收到 408/409/425/429、网络无响应或 5xx 时会使用同一幂等键最多自动重试 3 次；4xx 参数、权限和素材错误不重试并给出修正建议；`/content` 必须具有 MP4/WebM 文件签名，空文件或伪装成 `video/mp4` 的 HTML/JSON 会被拒绝。需确认双标签并发、停止、刷新、临时查询错误、429、源素材删除和异常下载内容下的恢复行为。
+- Grok 1.5 视频：原生 `grok-imagine-video-1.5` 及 `preview` / `1080p` 兼容别名均走 v2api 异步任务接口并要求一张首帧图；`preview` 保留所选 480p/720p/1080p，`1080p` 别名强制 1080p。需分别确认原生模型和两个别名的图生视频结果。
 - 配置与用户偏好：每个模型渠道新增 OpenAI / Gemini 调用格式选择，默认 OpenAI，切换默认格式时同步更新默认 Base URL；渠道 Tab 增加紧凑醒目的提醒，说明模型是否可选需要到“模型”Tab 选择。
 - Gemini 调用格式：支持拉取 Gemini 模型列表，并用于文本问答、在线 Agent 工具调用、基础生图和图生图请求。
 - 音频和视频生成：选择 Gemini 调用格式时先给出不支持提示，仍需使用 OpenAI 兼容渠道。
 - v2api 托管配置：按 handoff 渠道 group 归类模型，并补充常见视频模型名识别，需确认配置弹窗和视频创作台能显示视频模型。
 - v2api 入口：带 handoff 进入无限画布时先显示连接中状态，并等待配置恢复完成；v2api 入口直接跳转画布页，避免配置尚未写入前点击“开始使用”触发登录引导。
-- 视频生成：`firefly-veo`、`grok-imagine-video` 等聊天兼容视频模型改走 `/chat/completions` 并解析返回的视频链接，需确认 v2api 的 aicost 视频模型能生成并展示视频。
+- 视频生成：`firefly-veo` 继续走 `/chat/completions` 并解析返回的视频链接；Grok 视频不再走聊天接口，改走 `/v1/videos`、`/v1/videos/:task_id` 和 `/content`，需确认两类模型都能生成并展示视频。
 - grok 视频兼容：`grok-imagine-video` 返回的 HTTP 视频文件地址会通过同源 `/api/video-proxy` 代理播放，需确认 HTTPS 页面不会因混合内容拦截导致无法预览。
 - Codex 插件接入：参考 Cowart 方式新增 `v2api-infinite-canvas` 插件清单、MCP 启动脚本和两个技能说明，需在 Codex 插件环境中确认可加载 `infinite-canvas` MCP，并能在已连接的 `image.v2api.top` 画布中创建/修改节点。
 - Codex 新电脑接入：新增不依赖项目源码的 V2API 画布连接文档，并让个人插件启动脚本在没有项目源码时自动回退到 `npx @basketikun/canvas-agent`；文档明确 Codex 有浏览器控制能力时应自动完成网页 Agent 连接，需在新电脑按文档验证 MCP 注册、插件启动、自动连接和手动兜底流程。

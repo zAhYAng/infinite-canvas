@@ -2,6 +2,13 @@
 
 ## Unreleased
 
++ [Added] Canvas groups, a persistent site-wide local Agent panel, and site tools for canvas projects, workbenches, prompts, and assets.
++ [Added] First-run canvas onboarding that introduces navigation, the online Agent, and its planning model.
++ [Improved] The home page now removes the prompt showcase and introduces each top navigation workspace on first visit.
++ [Fixed] Agent onboarding keeps its step controls visible when the assistant panel opens.
++ [Improved] Image and video workbench submissions now run the same generation-profile preflight used by the canvas.
++ [Improved] TTAPI Grok video generation recovers from temporary submission failures and one explicit upstream job failure with actionable terminal errors.
++ [Fixed] IME Enter handling, image retry persistence, and direct video-result URL fallback parsing.
 + [新增] 渠道兼容Gemini格式。
 
 ## v0.4.0 - 2026-06-16

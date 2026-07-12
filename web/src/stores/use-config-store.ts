@@ -57,6 +57,7 @@ export type WebdavSyncConfig = {
 };
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
+export const IMAGE_GENERATION_MAX_COUNT = 20;
 export type ModelCapability = "image" | "video" | "text" | "audio";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
@@ -308,8 +309,8 @@ export function normalizeModelOptionValue(value: string | undefined, channels: M
         const channel = channels.find((item) => item.id === decoded.channelId);
         return channel && channel.models.includes(decoded.model) ? model : "";
     }
-    const channel = channels.find((item) => item.models.includes(decoded?.model || model)) || channels[0];
-    return channel && channel.models.includes(decoded?.model || model) ? encodeChannelModel(channel.id, decoded?.model || model) : model;
+    const channel = channels.find((item) => item.models.includes(model)) || channels[0];
+    return channel && channel.models.includes(model) ? encodeChannelModel(channel.id, model) : model;
 }
 
 export function resolveModelChannel(config: AiConfig, value: string) {

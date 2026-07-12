@@ -3,10 +3,12 @@ import { z } from "zod";
 const recordSchema = z.record(z.unknown());
 const positionSchema = z.object({ x: z.number(), y: z.number() });
 const viewportSchema = z.object({ x: z.number(), y: z.number(), k: z.number() });
-const nodeTypeSchema = z.enum(["image", "text", "config", "video", "audio"]);
+const nodeTypeSchema = z.enum(["image", "text", "config", "video", "audio", "group"]);
 const generationModeSchema = z.enum(["text", "image", "video", "audio"]);
 
 export const toolNames = [
+    "site_navigate",
+    "canvas_list_projects",
     "canvas_get_state",
     "canvas_get_selection",
     "canvas_export_snapshot",
@@ -17,6 +19,7 @@ export const toolNames = [
     "canvas_create_config_node",
     "canvas_create_image_prompt_flow",
     "canvas_create_generation_flow",
+    "canvas_create_storyboard_workflow",
     "canvas_generate_text",
     "canvas_generate_image",
     "canvas_generate_video",
@@ -30,6 +33,13 @@ export const toolNames = [
     "canvas_select_nodes",
     "canvas_set_viewport",
     "canvas_run_generation",
+    "workbench_image_get_config",
+    "workbench_image_generate",
+    "workbench_video_get_config",
+    "workbench_video_generate",
+    "prompts_search",
+    "assets_list",
+    "assets_add",
 ] as const;
 export type ToolName = (typeof toolNames)[number];
 
@@ -77,6 +87,15 @@ const generationFlowSchema = z.object({
 });
 
 export const toolInputSchemas = {
+    site_navigate: z.object({ path: z.string() }),
+    canvas_list_projects: z.object({ keyword: z.string().optional(), page: z.number().optional(), pageSize: z.number().optional() }),
+    workbench_image_get_config: z.object({}).passthrough(),
+    workbench_image_generate: z.object({ prompt: z.string(), model: z.string().optional(), quality: z.string().optional(), size: z.string().optional(), count: z.number().optional(), run: z.boolean().optional() }),
+    workbench_video_get_config: z.object({}).passthrough(),
+    workbench_video_generate: z.object({ prompt: z.string(), model: z.string().optional(), size: z.string().optional(), seconds: z.string().optional(), resolution: z.string().optional(), generateAudio: z.boolean().optional(), watermark: z.boolean().optional(), run: z.boolean().optional() }),
+    prompts_search: z.object({ keyword: z.string().optional(), category: z.string().optional(), tags: z.array(z.string()).optional(), page: z.number().optional(), pageSize: z.number().optional() }),
+    assets_list: z.object({ kind: z.enum(["all", "text", "image", "video"]).optional(), keyword: z.string().optional(), page: z.number().optional(), pageSize: z.number().optional() }),
+    assets_add: z.object({ kind: z.enum(["text", "image"]), title: z.string(), content: z.string().optional(), imageUrl: z.string().optional(), tags: z.array(z.string()).optional(), source: z.string().optional(), note: z.string().optional() }),
     canvas_get_state: z.object({}).passthrough(),
     canvas_get_selection: z.object({}).passthrough(),
     canvas_export_snapshot: z.object({}).passthrough(),
@@ -87,6 +106,7 @@ export const toolInputSchemas = {
     canvas_create_config_node: z.object({ prompt: z.string().optional(), mode: generationModeSchema.optional(), title: z.string().optional(), x: z.number().optional(), y: z.number().optional(), width: z.number().optional(), height: z.number().optional(), autoRun: z.boolean().optional() }).merge(generationOptionsSchema),
     canvas_create_image_prompt_flow: z.object({ prompt: z.string(), x: z.number().optional(), y: z.number().optional(), autoRun: z.boolean().optional() }).merge(generationOptionsSchema),
     canvas_create_generation_flow: generationFlowSchema.extend({ mode: generationModeSchema.optional(), autoRun: z.boolean().optional() }).merge(generationOptionsSchema),
+    canvas_create_storyboard_workflow: generationFlowSchema.extend({ shots: z.array(z.string()).length(4), videoPrompt: z.string().optional() }).merge(generationOptionsSchema),
     canvas_generate_text: generationFlowSchema.merge(generationOptionsSchema),
     canvas_generate_image: generationFlowSchema.merge(generationOptionsSchema),
     canvas_generate_video: generationFlowSchema.merge(generationOptionsSchema),
@@ -103,6 +123,15 @@ export const toolInputSchemas = {
 } satisfies Record<ToolName, z.AnyZodObject>;
 
 export const toolDescriptions: Record<ToolName, string> = {
+    site_navigate: "Navigate to a supported Infinite Canvas page.",
+    canvas_list_projects: "List browser-local canvas projects with identifiers and summaries.",
+    workbench_image_get_config: "Read image workbench settings and known model capability profiles.",
+    workbench_image_generate: "Prepare image workbench settings and optionally submit through the page flow when run=true.",
+    workbench_video_get_config: "Read video workbench settings and known model capability profiles.",
+    workbench_video_generate: "Prepare video workbench settings and optionally submit through the page flow when run=true.",
+    prompts_search: "Search the prompt library.",
+    assets_list: "List browser-local assets.",
+    assets_add: "Add a browser-local text or image asset.",
     canvas_get_state: "读取当前网页画布的节点、连线、选区和视口。",
     canvas_get_selection: "读取当前网页画布选中的节点。",
     canvas_export_snapshot: "导出当前画布快照，用于理解布局。",
@@ -113,6 +142,7 @@ export const toolDescriptions: Record<ToolName, string> = {
     canvas_create_config_node: "创建生成配置节点，可指定 text/image/video/audio 模式和生成参数，可选择立即触发生成。",
     canvas_create_image_prompt_flow: "创建提示词文本节点和图片生成配置节点，并自动连线，可选择立即触发生图。",
     canvas_create_generation_flow: "创建通用生成流程：提示词文本节点、生成配置节点、参考节点连线，可用于文案、生图、视频或音频。",
+    canvas_create_storyboard_workflow: "创建待确认的四图分镜加视频工作流；用户选择主图后才生成视频。",
     canvas_generate_text: "创建通用文本生成流程并立即触发生成。",
     canvas_generate_image: "创建通用图片生成流程并立即触发生成。",
     canvas_generate_video: "创建通用视频生成流程并立即触发生成。",

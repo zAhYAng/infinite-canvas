@@ -20,6 +20,8 @@ import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import type { ReferenceImage } from "@/types/image";
+import { preflightGeneration } from "@/app/(user)/canvas/utils/generation-preflight";
+import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 
 type GeneratedImage = {
     id: string;
@@ -90,6 +92,9 @@ export default function ImagePage() {
     const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
     const [previewLog, setPreviewLog] = useState<GenerationLog | null>(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const processedAgentActionsRef = useRef(new Set<string>());
+    const imageAction = useWorkbenchAgentStore((state) => state.imageAction);
+    const clearImageAction = useWorkbenchAgentStore((state) => state.clearImage);
 
     const model = effectiveConfig.imageModel || effectiveConfig.model;
     const canGenerate = Boolean(prompt.trim());
@@ -104,6 +109,14 @@ export default function ImagePage() {
     useEffect(() => {
         void refreshLogs();
     }, []);
+
+    useEffect(() => {
+        if (!imageAction || processedAgentActionsRef.current.has(imageAction.id)) return;
+        processedAgentActionsRef.current.add(imageAction.id);
+        setPrompt(imageAction.prompt);
+        clearImageAction(imageAction.id);
+        if (imageAction.run) window.setTimeout(() => void generate(imageAction.prompt), 0);
+    }, [clearImageAction, imageAction]);
 
     const addReferences = async (files?: FileList | null) => {
         const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
@@ -137,8 +150,8 @@ export default function ImagePage() {
         }
     };
 
-    const generate = async () => {
-        const text = prompt.trim();
+    const generate = async (promptOverride?: string) => {
+        const text = (promptOverride ?? prompt).trim();
         if (!text) {
             message.error("请输入生图提示词");
             return;
@@ -149,7 +162,7 @@ export default function ImagePage() {
             return;
         }
 
-        const snapshot = buildRequestSnapshot();
+        const snapshot = buildRequestSnapshot(text);
         if (!snapshot) return;
 
         setElapsedMs(0);
@@ -268,8 +281,8 @@ export default function ImagePage() {
         setResults(log.images.map((image) => ({ id: image.id, status: "success", image })));
     };
 
-    const buildRequestSnapshot = () => {
-        const text = prompt.trim();
+    const buildRequestSnapshot = (promptValue?: string) => {
+        const text = (promptValue ?? prompt).trim();
         if (!text) {
             message.error("请输入生图提示词");
             return null;
@@ -279,7 +292,13 @@ export default function ImagePage() {
             openConfigDialog(true);
             return null;
         }
-        return { text, config: { ...effectiveConfig, model, count: "1" }, references: [...references] };
+        const requestConfig = { ...effectiveConfig, model, count: "1" };
+        const plan = preflightGeneration({ config: { ...requestConfig, count: String(generationCount) }, mode: "image", prompt: text, references });
+        if (!plan.valid) {
+            message.error(plan.diagnostics.map((item) => item.message).join("；") || "Invalid generation parameters");
+            return null;
+        }
+        return { text, config: requestConfig, references: [...references] };
     };
 
     const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[] }) => {
@@ -298,12 +317,34 @@ export default function ImagePage() {
         }
     };
 
-    const retryResult = (index: number) => {
+    const retryResult = async (index: number) => {
         const snapshot = buildRequestSnapshot();
         if (!snapshot) return;
         setPreviewLog(null);
         setResults((value) => updateResultAt(value, index, { status: "pending", error: undefined, image: undefined }));
-        void runGenerationSlot(index, snapshot).catch(() => {});
+        const startedAt = performance.now();
+        try {
+            const image = await runGenerationSlot(index, snapshot);
+            const stored = await uploadImage(image.dataUrl);
+            const logImage = { ...image, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
+            setResults((value) => updateResultAt(value, index, { image: { ...image, dataUrl: stored.url, storageKey: stored.storageKey } }));
+            saveLog(
+                buildLog({
+                    prompt: snapshot.text,
+                    model,
+                    config: { ...snapshot.config, count: "1" },
+                    references: snapshot.references,
+                    durationMs: performance.now() - startedAt,
+                    successCount: 1,
+                    failCount: 0,
+                    status: "成功",
+                    images: [logImage],
+                }),
+            );
+            message.success("重试成功");
+        } catch {
+            // runGenerationSlot already updates the result card with the failure.
+        }
     };
 
     return (
@@ -471,7 +512,7 @@ export default function ImagePage() {
                 </div>
             </Drawer>
             <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
-            <AssetPickerModal open={assetPickerOpen} defaultTab="my-assets" onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />
+            <AssetPickerModal open={assetPickerOpen} onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />
             <Modal title="删除生成记录" open={deleteConfirmOpen} onCancel={() => setDeleteConfirmOpen(false)} onOk={deleteSelectedLogs} okText="删除" okButtonProps={{ danger: true }} cancelText="取消">
                 确定删除选中的 {selectedLogIds.length} 条生成记录吗？
             </Modal>

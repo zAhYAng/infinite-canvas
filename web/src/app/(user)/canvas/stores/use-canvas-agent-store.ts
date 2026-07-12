@@ -6,7 +6,7 @@ export type AgentChatRole = "user" | "assistant" | "system" | "tool" | "error";
 export type AgentAttachment = { id: string; name: string; type: string; size: number; url: string; dataUrl: string };
 export type AgentChatItem = { id: string; role: AgentChatRole; title?: string; text: string; meta?: string; detail?: unknown; attachments?: AgentAttachment[]; streamId?: string };
 export type AgentEventLog = { id: string; time: string; title: string; text: string; raw?: unknown };
-export type AgentPendingToolCall = { requestId: string; name: string; input?: { ops?: CanvasAgentOp[] } };
+export type AgentPendingToolCall = { requestId: string; name: string; input?: Record<string, unknown> & { ops?: CanvasAgentOp[] } };
 export type AgentThreadSummary = { id: string; preview: string; name?: string | null; cwd?: string; status?: string; source?: unknown; createdAt?: number; updatedAt?: number };
 export type AgentPanelTab = "chat" | "setup" | "history" | "log";
 
@@ -31,6 +31,7 @@ type CanvasAgentStore = {
     activity: string;
     connectError: string;
     pendingTool: AgentPendingToolCall | null;
+    panelOpen: boolean;
     setAgentState: (patch: Partial<Omit<CanvasAgentStore, "setAgentState" | "addMessage" | "addEventLog" | "clearEventLogs">>) => void;
     addMessage: (item: AgentChatItem) => void;
     addEventLog: (item: AgentEventLog) => void;
@@ -58,6 +59,7 @@ export const useCanvasAgentStore = create<CanvasAgentStore>((set) => ({
     activity: "就绪",
     connectError: "",
     pendingTool: null,
+    panelOpen: false,
     setAgentState: (patch) => set(patch),
     addMessage: (item) => set((state) => ({ messages: [...state.messages.slice(-120), item] })),
     addEventLog: (item) => set((state) => ({ eventLogs: [...state.eventLogs.slice(-160), item] })),

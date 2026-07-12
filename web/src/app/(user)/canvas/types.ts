@@ -1,3 +1,5 @@
+import type { AIReference } from "./types/reference";
+
 export type Position = {
     x: number;
     y: number;
@@ -15,11 +17,34 @@ export enum CanvasNodeType {
     Config = "config",
     Video = "video",
     Audio = "audio",
+    Group = "group",
 }
 
 export type CanvasNodeStatus = "idle" | "success" | "loading" | "error";
 export type CanvasGenerationMode = "text" | "image" | "video" | "audio";
 export type CanvasImageGenerationType = "generation" | "edit";
+export type CanvasVideoTaskType = "t2v" | "i2v" | "first-last-frame";
+export type CanvasVideoGenerationTask = {
+    id?: string;
+    provider: "openai" | "seedance" | "chat";
+    model: string;
+    channelId: string;
+    baseUrl: string;
+    idempotencyKey?: string;
+};
+
+export type CanvasWorkflowState = "draft" | "awaiting_confirmation" | "running" | "awaiting_selection" | "completed" | "failed";
+export type CanvasStoryboardWorkflow = {
+    id: string;
+    state: CanvasWorkflowState;
+    prompt: string;
+    shotPrompts: string[];
+    imageNodeIds: string[];
+    videoNodeId: string;
+    videoPrompt: string;
+    selectedImageId?: string;
+    error?: string;
+};
 
 export type CanvasNodeMetadata = {
     content?: string;
@@ -42,13 +67,20 @@ export type CanvasNodeMetadata = {
     audioFormat?: string;
     audioSpeed?: string;
     audioInstructions?: string;
-    references?: string[];
+    references?: AIReference[];
+    videoTaskType?: CanvasVideoTaskType;
+    videoTask?: CanvasVideoGenerationTask;
+    videoTaskOriginNodeId?: string;
+    settledVideoTaskKey?: string;
+	workflow?: CanvasStoryboardWorkflow;
     naturalWidth?: number;
     naturalHeight?: number;
     freeResize?: boolean;
     isBatchRoot?: boolean;
     batchRootId?: string;
     batchChildIds?: string[];
+    groupId?: string;
+    groupChildIds?: string[];
     batchUsesReferenceImages?: boolean;
     primaryImageId?: string;
     imageBatchExpanded?: boolean;
