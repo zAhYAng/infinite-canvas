@@ -1,9 +1,10 @@
 import { getCachedCanvasCapability, type CanvasModelCapability, type GenerationOperation, type GenerationOperationId } from "@/services/api/canvas-capabilities";
+import { getGrokVideoCreateDiagnostics, isGrokVideoModel } from "@/services/api/grok-video-contract";
 import { modelOptionName, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 
 export type GenerationPreflightMode = "image" | "video";
-export type GenerationDiagnostic = { field: "model" | "prompt" | "references" | "seconds" | "resolution" | "count" | "media"; message: string };
+export type GenerationDiagnostic = { field: "model" | "prompt" | "references" | "seconds" | "resolution" | "size" | "count" | "media"; message: string };
 export type ValidatedGenerationPlan = {
     valid: boolean;
     strict: boolean;
@@ -17,13 +18,20 @@ export function preflightGeneration({ config, mode, prompt, references = [], ref
     const model = modelOptionName(config.model || (mode === "video" ? config.videoModel : config.imageModel));
     const operation: GenerationOperationId = mode === "video" ? "videos.create" : references.length ? "images.edit" : "images.generate";
     const capability = getCachedCanvasCapability(config, config.model || (mode === "video" ? config.videoModel : config.imageModel));
-    if (!capability?.known || !capability.profile) return { valid: Boolean(prompt.trim() && model), strict: false, model, operation, capability, diagnostics: prompt.trim() ? [] : [{ field: "prompt", message: "请输入提示词" }] };
+    const imageCount = referenceCount ?? references.length;
+    const grokVideoModel = isGrokVideoModel(model);
+    const grokTextModelSelectedForVideo = mode === "video" && /^grok(?:[-_]|$)/i.test(model) && !grokVideoModel;
+    const grokDiagnostics = grokVideoModel ? getGrokVideoCreateDiagnostics({ model, prompt, seconds: config.videoSeconds, size: config.size, resolution: config.vquality, imageCount }) : grokTextModelSelectedForVideo ? [{ field: "model" as const, message: `${model} 不是可用于视频生成的 Grok 模型` }] : [];
+    if (!capability?.known || !capability.profile) {
+        if (grokDiagnostics.length) return { valid: false, strict: true, model, operation, capability, diagnostics: grokDiagnostics };
+        return { valid: Boolean(prompt.trim() && model), strict: grokVideoModel, model, operation, capability, diagnostics: prompt.trim() ? [] : [{ field: "prompt", message: "请输入提示词" }] };
+    }
 
     const operationProfile = capability.profile.operations.find((item) => item.id === operation);
     const diagnostics: GenerationDiagnostic[] = [];
     if (!operationProfile) diagnostics.push({ field: "model", message: `${model} 未声明 ${operation} 能力` });
     if (!prompt.trim()) diagnostics.push({ field: "prompt", message: "请输入提示词" });
-    if (operationProfile) validateOperation(operationProfile, config, prompt, referenceCount ?? references.length, videoReferenceCount, audioReferenceCount, diagnostics);
+    if (operationProfile) validateOperation(operationProfile, config, prompt, imageCount, videoReferenceCount, audioReferenceCount, diagnostics);
     return { valid: diagnostics.length === 0, strict: true, model, operation, capability, diagnostics };
 }
 

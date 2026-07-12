@@ -21,6 +21,7 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "../utils/canvas-image-data";
 import { fitNodeSize, nodeSizeFromRatio } from "../utils/canvas-node-size";
+import { fitViewportToNodes, zoomViewportAtPoint } from "../utils/canvas-viewport";
 import { App, Button, Dropdown, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "../constants";
 import { ActiveConnectionPath, ConnectionPath } from "../components/canvas-connections";
@@ -44,6 +45,7 @@ import { CanvasToolbar } from "../components/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "../components/asset-picker-modal";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
 import { useCanvasStore, type CanvasProject } from "../stores/use-canvas-store";
+import { useCanvasAgentStore } from "../stores/use-canvas-agent-store";
 import { useAgentCanvasBridgeStore } from "../stores/use-agent-canvas-bridge";
 import { applyCanvasAgentOps, type CanvasAgentOp, type CanvasAgentSnapshot } from "../utils/canvas-agent-ops";
 import { detachDeletedGroups, groupDragClosure, remapCopiedGroupLinks, updateGroupMembershipAfterDrag } from "../utils/canvas-groups";
@@ -51,6 +53,7 @@ import { buildCanvasResourceReferences, buildNodeMentionReferences } from "../ut
 import { migrateCanvasNodeReferences, nodeToAIReference, referenceNodeId } from "../utils/migrate-references";
 import { findPendingVideoSubmissionNode, hasMissingVideoTaskDependencies, hasPendingVideoTasks, hasRunningGenerationForNode, isPendingVideoTaskNode, popHistoryWithoutPendingVideoTasks, touchesPendingVideoTask } from "../utils/canvas-video-task-guard";
 import { withCanvasVideoSubmissionLock } from "../utils/canvas-video-submission-lock";
+import { runStoryboardImages, runStoryboardVideo } from "../utils/storyboard-workflow";
 import { isGrokVideoModel } from "@/services/api/grok-video-contract";
 import { preflightGeneration } from "../utils/generation-preflight";
 import type { CanvasAgentMode } from "../components/canvas-agent-chat-ui";
@@ -154,10 +157,12 @@ function createCanvasNode(type: CanvasNodeType, position: Position, metadata?: C
 
 export default function CanvasPage() {
     const [mounted, setMounted] = useState(false);
+    const setAgentState = useCanvasAgentStore((state) => state.setAgentState);
 
     useEffect(() => {
         setMounted(true);
-    }, []);
+        setAgentState({ panelOpen: true, activeTab: "chat", composerFocusId: Date.now() });
+    }, [setAgentState]);
 
     if (!mounted) return <CanvasRefreshShell />;
 
@@ -668,6 +673,11 @@ function InfiniteCanvasPage() {
         return screenToCanvas((rect?.left || 0) + (rect?.width || size.width) / 2, (rect?.top || 0) + (rect?.height || size.height) / 2);
     }, [screenToCanvas, size.height, size.width]);
 
+    const getCanvasViewportSize = useCallback(() => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        return { width: rect?.width || size.width, height: rect?.height || size.height };
+    }, [size.height, size.width]);
+
     const setConnecting = useCallback((next: ConnectionHandle | null) => {
         connectingParamsRef.current = next;
         setConnectingParams(next);
@@ -981,6 +991,10 @@ function InfiniteCanvasPage() {
             const before = { projectId, title: currentProject?.title || "未命名画布", nodes: nodesRef.current, connections: connectionsRef.current, selectedNodeIds: Array.from(selectedNodeIdsRef.current), viewport: viewportRef.current };
             const generationOps = safeOps.filter((op): op is Extract<CanvasAgentOp, { type: "run_generation" }> => op.type === "run_generation" && Boolean(op.nodeId));
             const next = applyCanvasAgentOps(before, safeOps.filter((op) => op.type !== "run_generation"));
+            const createdNodes = next.nodes.filter((node) => !before.nodes.some((current) => current.id === node.id));
+            if (createdNodes.length && !safeOps.some((op) => op.type === "set_viewport")) {
+                next.viewport = fitViewportToNodes(createdNodes, getCanvasViewportSize());
+            }
             nodesRef.current = next.nodes;
             connectionsRef.current = next.connections;
             selectedNodeIdsRef.current = new Set(next.selectedNodeIds);
@@ -1003,7 +1017,7 @@ function InfiniteCanvasPage() {
             }
             return { ...next, projectId, title: currentProject?.title || "未命名画布" };
         },
-        [blockPendingVideoMutation, currentProject?.title, projectId],
+        [blockPendingVideoMutation, currentProject?.title, getCanvasViewportSize, projectId],
     );
     const undoAgentOps = useCallback(() => {
         if (!agentUndoSnapshot) return null;
@@ -1256,21 +1270,18 @@ function InfiniteCanvasPage() {
     }, [getCanvasCenter, message]);
 
     const resetViewport = useCallback(() => {
-        setViewport({ x: size.width / 2, y: size.height / 2, k: 1 });
+        const selectedNodes = nodesRef.current.filter((node) => selectedNodeIdsRef.current.has(node.id));
+        setViewport(fitViewportToNodes(selectedNodes.length ? selectedNodes : nodesRef.current, getCanvasViewportSize()));
         setContextMenu(null);
-    }, [size.height, size.width]);
+    }, [getCanvasViewportSize]);
 
     const setZoomScale = useCallback(
         (scale: number) => {
-            const nextScale = Math.min(Math.max(scale, 0.05), 5);
-            setViewport((prev) => ({
-                x: size.width / 2 - ((size.width / 2 - prev.x) / prev.k) * nextScale,
-                y: size.height / 2 - ((size.height / 2 - prev.y) / prev.k) * nextScale,
-                k: nextScale,
-            }));
+            const viewportSize = getCanvasViewportSize();
+            setViewport((prev) => zoomViewportAtPoint(prev, scale, { x: viewportSize.width / 2, y: viewportSize.height / 2 }));
             setContextMenu(null);
         },
-        [size.height, size.width],
+        [getCanvasViewportSize],
     );
 
     const applyHistory = useCallback((entry: CanvasHistoryEntry) => {
@@ -2768,38 +2779,21 @@ function InfiniteCanvasPage() {
 	}, []);
 
 	const runStoryboardWorkflow = useCallback(
-		async (workflow: CanvasStoryboardWorkflow) => {
-			if (workflow.state !== "awaiting_confirmation") return;
-			updateStoryboardWorkflow(workflow.id, { state: "running", error: undefined });
-			for (const imageNodeId of workflow.imageNodeIds) {
-				const imageNode = nodesRef.current.find((node) => node.id === imageNodeId);
-				if (!imageNode) {
-					updateStoryboardWorkflow(workflow.id, { state: "failed", error: "分镜节点不存在" });
-					return;
-				}
-				await handleGenerateNode(imageNodeId, "image", imageNode.metadata?.prompt || "");
-			}
-			const hasFailure = workflow.imageNodeIds.some((id) => nodesRef.current.find((node) => node.id === id)?.metadata?.status === NODE_STATUS_ERROR);
-			updateStoryboardWorkflow(workflow.id, hasFailure ? { state: "failed", error: "至少一个分镜生成失败" } : { state: "awaiting_selection" });
-		},
+		async (workflow: CanvasStoryboardWorkflow) => runStoryboardImages(workflow, {
+			findNode: (id) => nodesRef.current.find((node) => node.id === id),
+			generateNode: (id, mode, prompt) => handleGenerateNode(id, mode, prompt),
+			update: updateStoryboardWorkflow,
+		}),
 		[handleGenerateNode, updateStoryboardWorkflow],
 	);
 
 	const selectStoryboardImage = useCallback(
-		async (workflow: CanvasStoryboardWorkflow, imageNodeId: string) => {
-			if (workflow.state !== "awaiting_selection") return;
-			const imageNode = nodesRef.current.find((node) => node.id === imageNodeId);
-			const videoNode = nodesRef.current.find((node) => node.id === workflow.videoNodeId);
-			if (!imageNode?.metadata?.content || !videoNode) {
-				updateStoryboardWorkflow(workflow.id, { state: "failed", error: "主图或视频节点不可用" });
-				return;
-			}
-			updateStoryboardWorkflow(workflow.id, { state: "running", selectedImageId: imageNodeId, error: undefined });
-			setConnections((prev) => (prev.some((connection) => connection.fromNodeId === imageNodeId && connection.toNodeId === videoNode.id) ? prev : [...prev, { id: nanoid(), fromNodeId: imageNodeId, toNodeId: videoNode.id }]));
-			await handleGenerateNode(videoNode.id, "video", videoNode.metadata?.prompt || workflow.videoPrompt);
-			const failed = nodesRef.current.find((node) => node.id === videoNode.id)?.metadata?.status === NODE_STATUS_ERROR;
-			updateStoryboardWorkflow(workflow.id, failed ? { state: "failed", error: "视频生成失败" } : { state: "completed" });
-		},
+		async (workflow: CanvasStoryboardWorkflow, imageNodeId: string) => runStoryboardVideo(workflow, imageNodeId, {
+			findNode: (id) => nodesRef.current.find((node) => node.id === id),
+			generateNode: (id, mode, prompt) => handleGenerateNode(id, mode, prompt),
+			connect: (fromNodeId, toNodeId) => setConnections((prev) => (prev.some((connection) => connection.fromNodeId === fromNodeId && connection.toNodeId === toNodeId) ? prev : [...prev, { id: nanoid(), fromNodeId, toNodeId }])),
+			update: updateStoryboardWorkflow,
+		}),
 		[handleGenerateNode, updateStoryboardWorkflow],
 	);
 

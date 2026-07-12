@@ -5,7 +5,7 @@ import { Image as ImageIcon, LoaderCircle, MessageSquare, Music2, Play, Settings
 import { Button, Segmented } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
-import { defaultConfig, IMAGE_GENERATION_MAX_COUNT, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { defaultConfig, IMAGE_GENERATION_MAX_COUNT, modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { CreditSymbol, requestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -116,7 +116,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                     <CanvasAudioSettingsPopover config={config} placement="topRight" buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, audioConfigPatch(key, value))} />
                 ) : null}
             </div>
-			{workflow ? <StoryboardWorkflowControls workflow={workflow} theme={theme} onRun={() => onRunStoryboard?.(workflow)} onSelect={(imageNodeId) => onSelectStoryboardImage?.(workflow, imageNodeId)} /> : null}
+			{workflow ? <StoryboardWorkflowControls workflow={workflow} theme={theme} imageConfig={config} videoConfig={globalConfig} referenceCount={inputSummary.imageCount} onRun={() => onRunStoryboard?.(workflow)} onSelect={(imageNodeId) => onSelectStoryboardImage?.(workflow, imageNodeId)} /> : null}
 
             <Button
                 type="primary"
@@ -150,8 +150,17 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
     );
 }
 
-function StoryboardWorkflowControls({ workflow, theme, onRun, onSelect }: { workflow: CanvasStoryboardWorkflow; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onRun: () => void; onSelect: (imageNodeId: string) => void }) {
-	if (workflow.state === "awaiting_confirmation") return <Button className="mb-2 !h-9 !w-full !rounded-lg" onMouseDown={(event) => event.stopPropagation()} onClick={onRun}>确认生成 4 张分镜</Button>;
+function StoryboardWorkflowControls({ workflow, theme, imageConfig, videoConfig, referenceCount, onRun, onSelect }: { workflow: CanvasStoryboardWorkflow; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; imageConfig: AiConfig; videoConfig: AiConfig; referenceCount: number; onRun: () => void; onSelect: (imageNodeId: string) => void }) {
+	if (workflow.state === "awaiting_confirmation") return <div className="mb-2 border-y py-2.5" style={{ borderColor: theme.node.stroke }} onMouseDown={(event) => event.stopPropagation()}>
+		<div className="text-xs font-medium">待确认工作流</div>
+		<div className="mt-1 text-xs leading-5" style={{ color: theme.node.muted }}>先生成 4 张分镜，选择主图后再生成 1 条视频；提交前不会产生视觉生成请求。</div>
+		<div className="mt-2 space-y-1 text-[11px]" style={{ color: theme.node.muted }}>
+			<div>分镜：{modelOptionLabel(imageConfig, imageConfig.model)} · {imageConfig.size || "默认尺寸"} · 4 次</div>
+			<div>视频：{modelOptionLabel(videoConfig, videoConfig.videoModel || videoConfig.model)} · {videoConfig.videoSeconds || "默认时长"} 秒 · {videoConfig.vquality || "默认清晰度"}</div>
+			<div>{referenceCount ? `参考素材：${referenceCount} 张，将按模型限制绑定` : "参考素材：可在生成前补充"}</div>
+		</div>
+		<Button type="primary" className="mt-2 !h-9 !w-full !rounded-lg" onClick={onRun}>确认生成 4 张分镜</Button>
+	</div>;
 	if (workflow.state === "awaiting_selection") return <div className="mb-2 space-y-1.5" onMouseDown={(event) => event.stopPropagation()}>
 		<div className="text-xs" style={{ color: theme.node.muted }}>选择主图后将生成视频</div>
 		<div className="grid grid-cols-2 gap-1.5">{workflow.imageNodeIds.map((id, index) => <Button key={id} size="small" className="!h-8 !rounded-md" onClick={() => onSelect(id)}>镜头 {index + 1}</Button>)}</div>

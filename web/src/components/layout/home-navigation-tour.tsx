@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Compass, X } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 
 import { navigationTools } from "@/constant/navigation-tools";
+import { useCanvasAgentStore } from "@/app/(user)/canvas/stores/use-canvas-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 
@@ -21,21 +22,43 @@ const descriptions: Record<(typeof navigationTools)[number]["slug"], string> = {
 };
 
 type Rect = { top: number; left: number; width: number; height: number };
+type HomeNavigationStep = { slug: (typeof navigationTools)[number]["slug"] | "menu" | "agent"; label: string; description: string };
+
+const agentStep: HomeNavigationStep = {
+    slug: "agent",
+    label: "让 Agent 帮我开始",
+    description: "说出想做的内容、风格和已有素材。Agent 会先规划画布与工作台操作；生成前仍由你确认。",
+};
+
+const agentStarterPrompt = "我想完成一次创作。请先询问我的目标、风格和已有素材，再帮我规划图片或视频工作流；生成前请把参数和需要确认的步骤列出来。";
 
 export function HomeNavigationTour() {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const { connected, setAgentState } = useCanvasAgentStore();
     const reduceMotion = useReducedMotion();
     const [open, setOpen] = useState(false);
     const [stepIndex, setStepIndex] = useState(0);
     const [rect, setRect] = useState<Rect | null>(null);
     const isCompact = typeof window !== "undefined" && window.innerWidth < 768;
-    const steps = isCompact ? [{ slug: "menu", label: "顶部菜单", description: "打开左上角菜单，可以进入我的画布、生图工作台、视频创作台、提示词库和我的素材。" }] : navigationTools.map((tool) => ({ ...tool, description: descriptions[tool.slug] }));
+    const steps: HomeNavigationStep[] = isCompact
+        ? [{ slug: "menu", label: "顶部菜单", description: "打开左上角菜单，可以进入我的画布、生图工作台、视频创作台、提示词库和我的素材。" }, agentStep]
+        : [...navigationTools.map((tool) => ({ ...tool, description: descriptions[tool.slug] })), agentStep];
     const step = steps[Math.min(stepIndex, steps.length - 1)];
     const selector = step.slug === "menu" ? '[data-home-navigation="menu"]' : `[data-home-navigation="${step.slug}"]`;
 
     const finish = () => {
         localStorage.setItem(STORAGE_KEY, "completed");
         setOpen(false);
+    };
+
+    const startWithAgent = () => {
+        finish();
+        setAgentState({
+            panelOpen: true,
+            activeTab: connected ? "chat" : "setup",
+            prompt: connected ? agentStarterPrompt : "",
+            composerFocusId: connected ? Date.now() : 0,
+        });
     };
 
     useEffect(() => {
@@ -116,8 +139,8 @@ export function HomeNavigationTour() {
                     <button type="button" disabled={stepIndex === 0} className="text-sm transition hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-35" style={{ color: theme.node.muted }} onClick={() => setStepIndex((current) => Math.max(0, current - 1))}>
                         <ChevronLeft className="mr-1 inline size-4" />上一步
                     </button>
-                    <button type="button" className="inline-flex h-9 items-center gap-1 rounded-md px-3 text-sm font-medium text-white transition hover:opacity-90" style={{ background: "#2d8e7d" }} onClick={() => (isLast ? finish() : setStepIndex((current) => current + 1))}>
-                        {isLast ? "开始创作" : "下一项"}
+                    <button type="button" className="inline-flex h-9 items-center gap-1 rounded-md px-3 text-sm font-medium text-white transition hover:opacity-90" style={{ background: "#2d8e7d" }} onClick={() => (isLast ? startWithAgent() : setStepIndex((current) => current + 1))}>
+                        {isLast ? "让 Agent 帮我开始" : "下一项"}
                         {!isLast ? <ChevronRight className="size-4" /> : null}
                     </button>
                 </div>

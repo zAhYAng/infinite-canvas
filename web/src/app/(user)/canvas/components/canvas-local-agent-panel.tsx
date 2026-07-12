@@ -49,7 +49,7 @@ export function CanvasLocalAgentPanel({ snapshot: snapshotProp, canUndoOps = fal
     const bridge = useAgentCanvasBridgeStore((state) => state.bridge);
     const snapshot = snapshotProp || bridge?.snapshot || null;
     const { message, modal } = App.useApp();
-    const { width, url, token, connected, enabled, prompt, attachments, sending, waiting, messages, eventLogs, threads, activeThreadId, workspacePath, loadingThreads, activeTab, confirmTools, activity, connectError, pendingTool, setAgentState, addMessage: pushMessage, addEventLog: pushEventLog, clearEventLogs } = useCanvasAgentStore();
+    const { width, url, token, connected, enabled, prompt, attachments, sending, waiting, messages, eventLogs, threads, activeThreadId, workspacePath, loadingThreads, activeTab, confirmTools, activity, connectError, pendingTool, composerFocusId, setAgentState, addMessage: pushMessage, addEventLog: pushEventLog, clearEventLogs } = useCanvasAgentStore();
     const [resizing, setResizing] = useState(false);
     const listRef = useRef<HTMLDivElement>(null);
     const snapshotRef = useRef<CanvasAgentSnapshot | null>(snapshot);
@@ -116,7 +116,7 @@ export function CanvasLocalAgentPanel({ snapshot: snapshotProp, canUndoOps = fal
             const wasConnected = connectedRef.current;
             errorLoggedRef.current = false;
             connectedRef.current = true;
-            setAgentState({ connected: true, activity: "已连接", connectError: "", messages: useCanvasAgentStore.getState().messages.filter((item) => !isConnectionErrorMessage(item)) });
+            setAgentState({ connected: true, activity: "已连接", connectError: "", activeTab: "chat", messages: useCanvasAgentStore.getState().messages.filter((item) => !isConnectionErrorMessage(item)) });
             message.success("本地 Agent 已连接");
             void postState(endpoint, token, clientId, snapshotRef.current);
             if (!wasConnected) onConnectedRef.current?.();
@@ -487,8 +487,8 @@ export function CanvasLocalAgentPanel({ snapshot: snapshotProp, canUndoOps = fal
                 value={activeTab}
                 theme={theme}
                 items={[
-                    { value: "setup", label: "连接", icon: <PlugZap className="size-3.5" /> },
                     { value: "chat", label: "对话" },
+                    { value: "setup", label: "连接", icon: <PlugZap className="size-3.5" /> },
                     { value: "history", label: "历史", icon: <History className="size-3.5" />, count: threads.length },
                     { value: "log", label: "日志", icon: <Terminal className="size-3.5" />, count: eventLogs.length },
                 ]}
@@ -556,6 +556,8 @@ export function CanvasLocalAgentPanel({ snapshot: snapshotProp, canUndoOps = fal
                         sending={sending || waiting}
                         placeholder="询问 Codex，或让它操作画布"
                         theme={theme}
+                        focusRequestId={composerFocusId}
+                        onFocused={() => setAgentState({ composerFocusId: 0 })}
                         onPromptChange={(prompt) => setAgentState({ prompt })}
                         onSubmit={sendPrompt}
                         onAddFiles={addAttachments}

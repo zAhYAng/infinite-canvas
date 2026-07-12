@@ -6,6 +6,7 @@ import { CircleDot, Eraser, FolderOpen, Grid2x2, Hand, Image as ImageIcon, Info,
 import { canvasThemes, type CanvasBackgroundMode, type CanvasColorTheme, type CanvasTheme } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
+import { GenerationTaskCenter } from "@/components/layout/generation-task-center";
 
 export function CanvasToolbar({
     selectedCount,
@@ -86,6 +87,7 @@ export function CanvasToolbar({
                 <ToolbarButton id="tool-video" label="视频" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddVideo}>
                     <Video className="size-4.5" />
                 </ToolbarButton>
+                <GenerationTaskCenter triggerClassName="!h-8 !w-8 !min-w-8 !p-0" />
                 <ToolbarButton id="tool-audio" label="音频" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddAudio}>
                     <Music2 className="size-4.5" />
                 </ToolbarButton>

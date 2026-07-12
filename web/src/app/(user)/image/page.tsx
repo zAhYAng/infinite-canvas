@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, WandSparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
 import localforage from "localforage";
@@ -22,6 +22,7 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import type { ReferenceImage } from "@/types/image";
 import { preflightGeneration } from "@/app/(user)/canvas/utils/generation-preflight";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
+import { usePromptRefinement } from "@/hooks/use-prompt-refinement";
 
 type GeneratedImage = {
     id: string;
@@ -79,6 +80,7 @@ export default function ImagePage() {
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
     const [prompt, setPrompt] = useState("");
+    const { refinePrompt, refining } = usePromptRefinement("image", setPrompt);
     const [references, setReferences] = useState<ReferenceImage[]>([]);
     const [results, setResults] = useState<GenerationResult[]>([]);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
@@ -384,7 +386,10 @@ export default function ImagePage() {
                             <div>
                                 <div className="mb-2 flex items-center justify-between gap-3">
                                     <span className="text-base font-semibold">提示词</span>
-                                    <div className="flex gap-2">
+                                    <div className="flex flex-wrap justify-end gap-2">
+                                        <Button size="small" icon={<WandSparkles className="size-3.5" />} loading={refining} disabled={!prompt.trim() || refining || running} onClick={() => void refinePrompt(prompt)}>
+                                            AI 润色
+                                        </Button>
                                         <Button size="small" icon={<BookOpen className="size-3.5" />} onClick={() => setPromptDialogOpen(true)}>
                                             查看提示词库
                                         </Button>

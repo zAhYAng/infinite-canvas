@@ -23,6 +23,11 @@ export type GrokVideoCreateFields = {
     resolution_name: string;
 };
 
+export type GrokVideoCreateDiagnostic = {
+    field: "model" | "prompt" | "references" | "seconds" | "resolution" | "size";
+    message: string;
+};
+
 const MODEL_RULES: Record<GrokVideoModel, GrokVideoModelRules> = {
     "grok-imagine-video": {
         minSeconds: 1,
@@ -109,19 +114,36 @@ export function normalizeGrokVideoAspectRatio(value: string) {
     return ASPECT_RATIOS.reduce((closest, item) => (Math.abs(Math.log(ratio / item.ratio)) < Math.abs(Math.log(ratio / closest.ratio)) ? item : closest), ASPECT_RATIOS[0]).value;
 }
 
-export function buildGrokVideoCreateFields({ model, prompt, seconds, size, resolution, imageCount }: { model: string; prompt: string; seconds: string | number; size: string; resolution: string; imageCount: number }): GrokVideoCreateFields {
+export function getGrokVideoCreateDiagnostics({ model, prompt, seconds, size, resolution, imageCount }: { model: string; prompt: string; seconds: string | number; size: string; resolution: string; imageCount: number }): GrokVideoCreateDiagnostic[] {
     const normalizedModel = normalizeModel(model);
-    const rules = requireModelRules(normalizedModel);
+    const rules = getGrokVideoModelRules(normalizedModel);
+    if (!rules) return [{ field: "model", message: `不支持的 Grok 视频模型：${model}` }];
+
+    const diagnostics: GrokVideoCreateDiagnostic[] = [];
+    const normalizedPrompt = prompt.trim();
+    const requestedSeconds = Math.floor(Number(seconds));
+    const normalizedResolution = normalizeResolution(resolution);
+
+    if (!normalizedPrompt) diagnostics.push({ field: "prompt", message: "请输入视频提示词" });
+    if (rules.promptLimit && Array.from(normalizedPrompt).length > rules.promptLimit) diagnostics.push({ field: "prompt", message: `${normalizedModel} 的提示词不能超过 ${rules.promptLimit} 个字符` });
+    if (!Number.isFinite(requestedSeconds) || requestedSeconds < rules.minSeconds || requestedSeconds > rules.maxSeconds) diagnostics.push({ field: "seconds", message: `${normalizedModel} 支持 ${rules.minSeconds}-${rules.maxSeconds} 秒` });
+    if (!rules.forcedResolution && !rules.resolutions.includes(normalizedResolution)) diagnostics.push({ field: "resolution", message: `${normalizedModel} 仅支持 ${rules.resolutions.join("、")}` });
+    if (!isSupportedGrokVideoAspectRatio(size)) diagnostics.push({ field: "size", message: "视频尺寸必须为 2:3、3:2、1:1、9:16 或 16:9" });
+    if (rules.requiredImages !== undefined && imageCount !== rules.requiredImages) diagnostics.push({ field: "references", message: `${normalizedModel} 需要且只能连接 ${rules.requiredImages} 张参考图` });
+    else if (imageCount > rules.maxImages) diagnostics.push({ field: "references", message: `${normalizedModel} 最多支持 ${rules.maxImages} 张参考图` });
+    if (normalizedModel === "grok-imagine-video" && imageCount > 1 && Number.isFinite(requestedSeconds) && requestedSeconds > 10) diagnostics.push({ field: "seconds", message: "grok-imagine-video 使用多张参考图时最长支持 10 秒" });
+
+    return diagnostics;
+}
+
+export function buildGrokVideoCreateFields({ model, prompt, seconds, size, resolution, imageCount }: { model: string; prompt: string; seconds: string | number; size: string; resolution: string; imageCount: number }): GrokVideoCreateFields {
+    const diagnostics = getGrokVideoCreateDiagnostics({ model, prompt, seconds, size, resolution, imageCount });
+    if (diagnostics.length) throw new Error(diagnostics[0].message);
+    const normalizedModel = normalizeModel(model);
     const normalizedPrompt = prompt.trim();
     const normalizedSeconds = requireGrokVideoSeconds(normalizedModel, seconds);
     const normalizedResolution = requireGrokVideoResolution(normalizedModel, resolution);
     const aspectRatio = requireGrokVideoAspectRatio(size);
-
-    if (!normalizedPrompt) throw new Error("请输入视频提示词");
-    if (rules.promptLimit && Array.from(normalizedPrompt).length > rules.promptLimit) throw new Error(`${normalizedModel} 的提示词不能超过 ${rules.promptLimit} 个字符`);
-    if (rules.requiredImages !== undefined && imageCount !== rules.requiredImages) throw new Error(`${normalizedModel} 需要且只能连接 ${rules.requiredImages} 张参考图`);
-    if (imageCount > rules.maxImages) throw new Error(`${normalizedModel} 最多支持 ${rules.maxImages} 张参考图`);
-    if (normalizedModel === "grok-imagine-video" && imageCount > 1 && normalizedSeconds > 10) throw new Error("grok-imagine-video 使用多张参考图时最长支持 10 秒");
 
     return {
         model: normalizedModel,
@@ -179,6 +201,15 @@ function requireGrokVideoAspectRatio(value: string) {
     const closest = ASPECT_RATIOS.reduce((current, item) => (Math.abs(Math.log(ratio / item.ratio)) < Math.abs(Math.log(ratio / current.ratio)) ? item : current), ASPECT_RATIOS[0]);
     if (Math.abs(Math.log(ratio / closest.ratio)) > 0.02) throw new Error("视频尺寸必须为 2:3、3:2、1:1、9:16 或 16:9");
     return closest.value;
+}
+
+function isSupportedGrokVideoAspectRatio(value: string) {
+    try {
+        requireGrokVideoAspectRatio(value);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function sizeFor(aspectRatio: string, resolution: string) {

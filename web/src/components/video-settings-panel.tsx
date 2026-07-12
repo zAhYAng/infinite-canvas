@@ -65,6 +65,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const dimensions = readSizeDimensions(size);
     const resolution = grokRules ? normalizeGrokVideoResolution(model, config.vquality).replace(/p$/i, "") : normalizeVideoResolutionValue(config.vquality);
     const resolutionLocked = grokRules?.resolutions.length === 1;
+    const grokRequirement = grokRules ? describeGrokVideoRequirements(model, grokRules) : "";
     const updateDimension = (key: "width" | "height", value: number | null) => {
         const next = Math.max(1, Math.floor(value || dimensions[key] || 720));
         onConfigChange("size", `${key === "width" ? next : dimensions.width}x${key === "height" ? next : dimensions.height}`);
@@ -74,6 +75,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
         <ImageSettingsTheme theme={theme}>
             <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
                 {showTitle ? <div className="text-lg font-semibold">视频设置</div> : null}
+                {grokRequirement ? <p className="text-xs leading-5" style={{ color: theme.node.muted }}>{grokRequirement}</p> : null}
                 <SettingGroup title="清晰度" color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
                         {resolutionOptions.map((item) => (
@@ -120,6 +122,12 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
             </div>
         </ImageSettingsTheme>
     );
+}
+
+function describeGrokVideoRequirements(model: string, rules: NonNullable<ReturnType<typeof getGrokVideoModelRules>>) {
+    const references = rules.requiredImages !== undefined ? `需要且仅支持 ${rules.requiredImages} 张参考图` : `最多支持 ${rules.maxImages} 张参考图`;
+    const multipleImageLimit = model === "grok-imagine-video" ? "；使用多张参考图时最长 10 秒" : "";
+    return `${model}：时长 ${rules.minSeconds}-${rules.maxSeconds} 秒；${references}；分辨率 ${rules.resolutions.join(" / ")}${multipleImageLimit}`;
 }
 
 function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, className }: VideoSettingsPanelProps) {

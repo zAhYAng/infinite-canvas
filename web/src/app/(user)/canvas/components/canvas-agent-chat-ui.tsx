@@ -159,6 +159,8 @@ export function AgentChatComposer({
     onSubmit,
     onAddFiles,
     onRemoveAttachment,
+    focusRequestId = 0,
+    onFocused,
     left,
 }: {
     prompt: string;
@@ -171,10 +173,20 @@ export function AgentChatComposer({
     onSubmit: () => void;
     onAddFiles?: (files: FileList | File[] | null) => void | Promise<void>;
     onRemoveAttachment?: (id: string) => void;
+    focusRequestId?: number;
+    onFocused?: () => void;
     left?: ReactNode;
 }) {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
     const canSubmit = !disabled && !sending && Boolean(prompt.trim() || attachments.length);
+
+    useEffect(() => {
+        if (!focusRequestId || disabled) return;
+        textareaRef.current?.focus();
+        onFocused?.();
+    }, [disabled, focusRequestId, onFocused]);
+
     return (
         <div className="px-2 pb-2 pt-2" onWheelCapture={(event) => event.stopPropagation()}>
             <div className="rounded-[24px] border px-3 pb-3 pt-3 shadow-lg" style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke }}>
@@ -193,6 +205,7 @@ export function AgentChatComposer({
                     </div>
                 ) : null}
                 <textarea
+                    ref={textareaRef}
                     value={prompt}
                     onChange={(event) => onPromptChange(event.target.value)}
                     onPaste={(event) => {

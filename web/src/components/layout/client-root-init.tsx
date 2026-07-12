@@ -22,7 +22,7 @@ function encodedModelsFromChannels(channels: ModelChannel[], capability?: ModelC
 function encodedModelsFromHandoffChannels(rawChannels: CanvasHandoffChannel[], channels: ModelChannel[], capability: ModelCapability) {
     return channels.flatMap((channel, index) => {
         const group = groupCapability(rawChannels[index]?.group || "");
-        if (group) return group === capability ? channel.models.map((model) => encodeChannelModel(channel.id, model)) : [];
+        if (group) return group === capability ? encodedModels(channel.id, channel.models, capability) : [];
         return encodedModels(channel.id, channel.models, capability);
     });
 }

@@ -1,12 +1,13 @@
 "use client";
 
-import { Bot, Menu } from "lucide-react";
+import { Bot, CircleHelp, Menu } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { AppConfigModal } from "@/components/layout/app-config-modal";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
+import { GenerationTaskCenter } from "@/components/layout/generation-task-center";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -19,6 +20,11 @@ export function AppTopNav() {
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
+    const restartOnboarding = () => {
+        localStorage.removeItem("infinite-canvas:home-navigation-tour:v1");
+        localStorage.removeItem("infinite-canvas:canvas-onboarding:v1");
+        window.location.assign("/");
+    };
 
     return (
         <>
@@ -73,7 +79,11 @@ export function AppTopNav() {
                         </div>
 
                         <div className="my-auto flex h-9 min-w-0 items-center justify-end gap-2 justify-self-end whitespace-nowrap">
-                            <button type="button" className="inline-flex size-8 items-center justify-center rounded-md text-stone-500 transition hover:bg-stone-100 hover:text-stone-950 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100" onClick={() => setAgentState({ panelOpen: true })} aria-label="打开 Agent" title="打开 Agent">
+                            <button type="button" className="inline-flex size-8 items-center justify-center rounded-md text-stone-500 transition hover:bg-stone-100 hover:text-stone-950 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100" onClick={restartOnboarding} aria-label="重新开始引导" title="重新开始引导">
+                                <CircleHelp className="size-4" />
+                            </button>
+                            <GenerationTaskCenter />
+                            <button type="button" data-home-navigation="agent" className="inline-flex size-8 items-center justify-center rounded-md text-stone-500 transition hover:bg-stone-100 hover:text-stone-950 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100" onClick={() => setAgentState({ panelOpen: true, activeTab: "chat", composerFocusId: Date.now() })} aria-label="打开 Agent" title="打开 Agent">
                                 <Bot className="size-4" />
                             </button>
                             <UserStatusActions />

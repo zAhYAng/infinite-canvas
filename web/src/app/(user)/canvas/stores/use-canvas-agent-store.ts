@@ -32,6 +32,7 @@ type CanvasAgentStore = {
     connectError: string;
     pendingTool: AgentPendingToolCall | null;
     panelOpen: boolean;
+    composerFocusId: number;
     setAgentState: (patch: Partial<Omit<CanvasAgentStore, "setAgentState" | "addMessage" | "addEventLog" | "clearEventLogs">>) => void;
     addMessage: (item: AgentChatItem) => void;
     addEventLog: (item: AgentEventLog) => void;
@@ -54,12 +55,13 @@ export const useCanvasAgentStore = create<CanvasAgentStore>((set) => ({
     activeThreadId: "",
     workspacePath: "",
     loadingThreads: false,
-    activeTab: "setup",
+    activeTab: "chat",
     confirmTools: "off",
     activity: "就绪",
     connectError: "",
     pendingTool: null,
     panelOpen: false,
+    composerFocusId: 0,
     setAgentState: (patch) => set(patch),
     addMessage: (item) => set((state) => ({ messages: [...state.messages.slice(-120), item] })),
     addEventLog: (item) => set((state) => ({ eventLogs: [...state.eventLogs.slice(-160), item] })),

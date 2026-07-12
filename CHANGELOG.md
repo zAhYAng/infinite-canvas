@@ -5,9 +5,15 @@
 + [Added] Canvas groups, a persistent site-wide local Agent panel, and site tools for canvas projects, workbenches, prompts, and assets.
 + [Added] First-run canvas onboarding that introduces navigation, the online Agent, and its planning model.
 + [Improved] The home page now removes the prompt showcase and introduces each top navigation workspace on first visit.
++ [Added] Agent-led first-run creation entry, replayable onboarding, and a cross-page video task center backed by existing canvas and workbench records.
 + [Fixed] Agent onboarding keeps its step controls visible when the assistant panel opens.
++ [Fixed] Canvas zoom now keeps the pointer anchor stable, and the focus control brings selected or newly created nodes back into view.
++ [Improved] Agent now opens directly to chat, prioritizes the chat tab, and expands automatically when a canvas project opens.
++ [Added] Image and video workbenches can refine a typed prompt with the configured text model before submission.
 + [Improved] Image and video workbench submissions now run the same generation-profile preflight used by the canvas.
 + [Improved] TTAPI Grok video generation recovers from temporary submission failures and one explicit upstream job failure with actionable terminal errors.
++ [Improved] Storyboard confirmation now summarizes the planned visual requests before execution, and its execution state machine is isolated from the canvas page.
++ [Added] An opt-in, paid video smoke command verifies model visibility, public task polling, and downloaded video signatures without storing credentials.
 + [Fixed] IME Enter handling, image retry persistence, and direct video-result URL fallback parsing.
 + [新增] 渠道兼容Gemini格式。
 

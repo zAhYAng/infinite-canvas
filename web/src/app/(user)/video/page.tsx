@@ -1,7 +1,7 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Music2, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Music2, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon, WandSparkles } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from "antd";
 import localforage from "localforage";
 import { nanoid } from "nanoid";
@@ -10,7 +10,7 @@ import { saveAs } from "file-saver";
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
-import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel } from "@/components/video-settings-panel";
+import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSecondsLabel, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
@@ -24,6 +24,7 @@ import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import { preflightGeneration } from "@/app/(user)/canvas/utils/generation-preflight";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
+import { usePromptRefinement } from "@/hooks/use-prompt-refinement";
 
 type GeneratedVideo = {
     id: string;
@@ -83,6 +84,7 @@ export default function VideoPage() {
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
     const [prompt, setPrompt] = useState("");
+    const { refinePrompt, refining } = usePromptRefinement("video", setPrompt);
     const [references, setReferences] = useState<ReferenceImage[]>([]);
     const [videoReferences, setVideoReferences] = useState<ReferenceVideo[]>([]);
     const [audioReferences, setAudioReferences] = useState<ReferenceAudio[]>([]);
@@ -103,7 +105,13 @@ export default function VideoPage() {
     const clearVideoAction = useWorkbenchAgentStore((state) => state.clearVideo);
 
     const model = effectiveConfig.videoModel || effectiveConfig.model;
-    const canGenerate = Boolean(prompt.trim());
+    const requestConfig = useMemo(() => buildVideoConfig(effectiveConfig, model), [effectiveConfig, model]);
+    const generationPlan = useMemo(
+        () => preflightGeneration({ config: requestConfig, mode: "video", prompt, references, videoReferenceCount: videoReferences.length, audioReferenceCount: audioReferences.length }),
+        [audioReferences.length, prompt, references, requestConfig, videoReferences.length],
+    );
+    const blockingDiagnostic = generationPlan.strict && !generationPlan.valid ? generationPlan.diagnostics[0] : null;
+    const canGenerate = Boolean(prompt.trim() && model && !blockingDiagnostic);
 
     useEffect(() => {
         if (!running || !startedAt) return;
@@ -403,7 +411,10 @@ export default function VideoPage() {
                             <div>
                                 <div className="mb-2 flex items-center justify-between gap-3">
                                     <span className="text-base font-semibold">提示词</span>
-                                    <div className="flex gap-2">
+                                    <div className="flex flex-wrap justify-end gap-2">
+                                        <Button size="small" icon={<WandSparkles className="size-3.5" />} loading={refining} disabled={!prompt.trim() || refining || running} onClick={() => void refinePrompt(prompt)}>
+                                            AI 润色
+                                        </Button>
                                         <Button size="small" icon={<BookOpen className="size-3.5" />} onClick={() => setPromptDialogOpen(true)}>
                                             查看提示词库
                                         </Button>
@@ -492,7 +503,7 @@ export default function VideoPage() {
 
                             <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-800 dark:bg-stone-900 sm:hidden">
                                 <span className="truncate text-stone-500 dark:text-stone-400">
-                                    {modelOptionLabel(effectiveConfig, model)} · {normalizeResolution(effectiveConfig.vquality)}p · {videoSizeLabel(effectiveConfig.size)} · {normalizeVideoSeconds(effectiveConfig.videoSeconds)}s
+                                    {modelOptionLabel(effectiveConfig, model)} · {normalizeResolution(effectiveConfig.vquality)}p · {videoSizeLabel(effectiveConfig.size)} · {videoSecondsLabel(effectiveConfig.videoSeconds)}
                                 </span>
                                 <Button size="small" type="text" icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
                                     调整
@@ -500,7 +511,7 @@ export default function VideoPage() {
                             </div>
 
                             <div className="hidden gap-4 sm:grid sm:grid-cols-2">
-                                <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+                                <GenerationSettings config={{ ...effectiveConfig, model, videoModel: model }} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                             </div>
                         </div>
 
@@ -508,6 +519,7 @@ export default function VideoPage() {
                             <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running} disabled={!canGenerate || running} onClick={() => void generate()}>
                                 开始生成
                             </Button>
+                            {blockingDiagnostic ? <div role="alert" className="mt-2 text-xs leading-5 text-red-600 dark:text-red-300">{blockingDiagnostic.message}</div> : null}
                         </div>
                     </div>
 
@@ -859,17 +871,11 @@ function buildVideoConfig(config: AiConfig, model: string): AiConfig {
         model,
         videoModel: model,
         size: seedance ? normalizeSeedanceRatio(config.size) : normalizeVideoSize(config.size),
-        videoSeconds: normalizeVideoSeconds(config.videoSeconds),
+        videoSeconds: config.videoSeconds.trim() || "6",
         vquality: normalizeResolution(config.vquality),
         videoGenerateAudio: String(boolConfig(config.videoGenerateAudio, true)),
         videoWatermark: String(boolConfig(config.videoWatermark, false)),
     };
-}
-
-function normalizeVideoSeconds(value: string) {
-    if (String(value).trim() === "-1") return "-1";
-    const seconds = Math.floor(Number(value) || 6);
-    return String(Math.max(1, Math.min(20, seconds)));
 }
 
 function normalizeVideoSize(value: string) {
