@@ -18,6 +18,13 @@ describe("prompt refinement", () => {
         expect(messages[0].content).toContain("镜头运动");
     });
 
+    test("turns an Agent draft into a concise executable instruction", () => {
+        const messages = buildPromptRefinementMessages("agent", "帮我做一个产品海报");
+
+        expect(messages[0].content).toContain("Agent");
+        expect(messages[1]).toEqual({ role: "user", content: "帮我做一个产品海报" });
+    });
+
     test("removes an accidental markdown fence from the result", () => {
         expect(normalizeRefinedPrompt("```\n电影感街景\n``` ")).toBe("电影感街景");
     });

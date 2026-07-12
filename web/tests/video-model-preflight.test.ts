@@ -24,6 +24,26 @@ const config: AiConfig = {
 };
 
 describe("video model selection and preflight", () => {
+    test("keeps only featured text models in the requested display order", () => {
+        const textModels = ["grok-4.5", "gpt-4.1", "claude-opus-4-8", "gpt-5.6-luna", "gpt-5.5", "claude-sonnet-5", "gpt-5.6-sol", "gpt-5.6-terra"];
+        const textConfig: AiConfig = {
+            ...config,
+            channels: [{ ...channel, models: textModels }],
+            models: textModels.map((model) => `video::${model}`),
+            textModels: textModels.map((model) => `video::${model}`),
+        };
+
+        expect(selectableModelsByCapability(textConfig, "text")).toEqual([
+            "video::gpt-5.5",
+            "video::gpt-5.6-terra",
+            "video::gpt-5.6-sol",
+            "video::gpt-5.6-luna",
+            "video::claude-sonnet-5",
+            "video::claude-opus-4-8",
+            "video::grok-4.5",
+        ]);
+    });
+
     test("removes text-only Grok models from an accidentally mixed video list", () => {
         expect(selectableModelsByCapability(config, "video")).toEqual(["video::grok-imagine-video-1.5-fast"]);
     });

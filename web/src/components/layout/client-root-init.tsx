@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Spin } from "antd";
 
-import { createModelChannel, encodeChannelModel, modelMatchesCapability, useConfigStore, type AiConfig, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { createModelChannel, encodeChannelModel, featuredTextModels, modelMatchesCapability, useConfigStore, type AiConfig, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { IS_V2API_MANAGED, V2API_BASE_URL } from "@/constant/env";
 import { exchangeCanvasHandoff, type CanvasHandoffChannel } from "@/services/api/handoff";
 import { preloadCanvasCapabilities } from "@/services/api/canvas-capabilities";
@@ -20,11 +20,12 @@ function encodedModelsFromChannels(channels: ModelChannel[], capability?: ModelC
 }
 
 function encodedModelsFromHandoffChannels(rawChannels: CanvasHandoffChannel[], channels: ModelChannel[], capability: ModelCapability) {
-    return channels.flatMap((channel, index) => {
+    const models = channels.flatMap((channel, index) => {
         const group = groupCapability(rawChannels[index]?.group || "");
         if (group) return group === capability ? encodedModels(channel.id, channel.models, capability) : [];
         return encodedModels(channel.id, channel.models, capability);
     });
+    return capability === "text" ? featuredTextModels(models) : models;
 }
 
 function firstEncodedHandoffModel(rawChannels: CanvasHandoffChannel[], channels: ModelChannel[], capability: ModelCapability) {

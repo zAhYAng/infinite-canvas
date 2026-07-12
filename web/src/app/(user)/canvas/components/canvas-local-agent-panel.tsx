@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { useRouter } from "next/navigation";
 import { App, Button, Input, Segmented, Tooltip } from "antd";
 import copyToClipboard from "copy-to-clipboard";
-import { Copy, FolderOpen, History, KeyRound, Link2, LoaderCircle, PlugZap, Plus, RefreshCw, RotateCcw, Terminal, Trash2 } from "lucide-react";
+import { Copy, FolderOpen, History, KeyRound, Link2, LoaderCircle, PlugZap, Plus, RefreshCw, RotateCcw, Terminal, Trash2, WandSparkles } from "lucide-react";
 import { motion } from "motion/react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { usePromptRefinement } from "@/hooks/use-prompt-refinement";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useCanvasAgentStore, type AgentAttachment, type AgentChatItem, type AgentEventLog, type AgentPanelTab, type AgentPendingToolCall, type AgentThreadSummary } from "../stores/use-canvas-agent-store";
@@ -50,6 +51,7 @@ export function CanvasLocalAgentPanel({ snapshot: snapshotProp, canUndoOps = fal
     const snapshot = snapshotProp || bridge?.snapshot || null;
     const { message, modal } = App.useApp();
     const { width, url, token, connected, enabled, prompt, attachments, sending, waiting, messages, eventLogs, threads, activeThreadId, workspacePath, loadingThreads, activeTab, confirmTools, activity, connectError, pendingTool, composerFocusId, setAgentState, addMessage: pushMessage, addEventLog: pushEventLog, clearEventLogs } = useCanvasAgentStore();
+    const { refinePrompt, refining } = usePromptRefinement("agent", (nextPrompt) => setAgentState({ prompt: nextPrompt, composerFocusId: Date.now() }));
     const [resizing, setResizing] = useState(false);
     const listRef = useRef<HTMLDivElement>(null);
     const snapshotRef = useRef<CanvasAgentSnapshot | null>(snapshot);
@@ -562,7 +564,14 @@ export function CanvasLocalAgentPanel({ snapshot: snapshotProp, canUndoOps = fal
                         onSubmit={sendPrompt}
                         onAddFiles={addAttachments}
                         onRemoveAttachment={removeAttachment}
-                        left={attachments.length ? <span className="text-[11px]" style={{ color: theme.node.muted }}>{formatBytes(attachmentPayloadBytes(attachments))} / 30MB</span> : null}
+                        left={
+                            <>
+                                <Tooltip title="AI 润色">
+                                    <Button type="text" shape="circle" className="!h-9 !w-9 !min-w-9" disabled={!connected || !prompt.trim() || refining || sending || waiting} loading={refining} style={{ color: theme.node.muted }} icon={<WandSparkles className="size-4" />} onClick={() => void refinePrompt(prompt)} aria-label="AI 润色" />
+                                </Tooltip>
+                                {attachments.length ? <span className="text-[11px]" style={{ color: theme.node.muted }}>{formatBytes(attachmentPayloadBytes(attachments))} / 30MB</span> : null}
+                            </>
+                        }
                     />
                 </>
             )}

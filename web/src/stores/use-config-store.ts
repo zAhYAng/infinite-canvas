@@ -58,6 +58,7 @@ export type WebdavSyncConfig = {
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export const IMAGE_GENERATION_MAX_COUNT = 20;
+export const FEATURED_TEXT_MODELS = ["gpt-5.5", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna", "claude-sonnet-5", "claude-opus-4-8", "grok-4.5"] as const;
 export type ModelCapability = "image" | "video" | "text" | "audio";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
@@ -160,9 +161,18 @@ export function filterModelsByCapability(models: string[], capability?: ModelCap
     return capability ? models.filter((model) => modelMatchesCapability(model, capability)) : models;
 }
 
+export function featuredTextModels(models: string[]) {
+    const available = filterModelsByCapability(models, "text");
+    return FEATURED_TEXT_MODELS.flatMap((featuredModel) => {
+        const match = available.find((model) => modelOptionName(model).toLowerCase() === featuredModel);
+        return match ? [match] : [];
+    });
+}
+
 export function selectableModelsByCapability(config: AiConfig, capability?: ModelCapability) {
     if (!capability) return config.models;
-    return filterModelsByCapability(config[modelListKey(capability)], capability);
+    const models = filterModelsByCapability(config[modelListKey(capability)], capability);
+    return capability === "text" ? featuredTextModels(models) : models;
 }
 
 function modelListKey(capability: ModelCapability) {
