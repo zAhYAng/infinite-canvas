@@ -13,6 +13,7 @@ import { IS_V2API_MANAGED } from "@/constant/env";
 import {
     createModelChannel,
     defaultBaseUrlForApiFormat,
+    featuredTextModels,
     filterModelsByCapability,
     IMAGE_GENERATION_MAX_COUNT,
     modelOptionLabel,
@@ -474,7 +475,7 @@ function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
     const models = modelOptionsFromChannels(channels);
     const imageModels = keepOrSuggest(config.imageModels, filterModelsByCapability(models, "image"), models);
     const videoModels = keepOrSuggest(config.videoModels, filterModelsByCapability(models, "video"), models);
-    const textModels = keepOrSuggest(config.textModels, filterModelsByCapability(models, "text"), models);
+    const textModels = featuredTextModels(models);
     const audioModels = keepOrSuggest(config.audioModels, filterModelsByCapability(models, "audio"), models);
     return {
         ...config,

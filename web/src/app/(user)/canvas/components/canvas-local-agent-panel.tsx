@@ -9,6 +9,8 @@ import { motion } from "motion/react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { usePromptRefinement } from "@/hooks/use-prompt-refinement";
+import { ModelPicker } from "@/components/model-picker";
+import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useCanvasAgentStore, type AgentAttachment, type AgentChatItem, type AgentEventLog, type AgentPanelTab, type AgentPendingToolCall, type AgentThreadSummary } from "../stores/use-canvas-agent-store";
@@ -50,6 +52,9 @@ export function CanvasLocalAgentPanel({ snapshot: snapshotProp, canUndoOps = fal
     const bridge = useAgentCanvasBridgeStore((state) => state.bridge);
     const snapshot = snapshotProp || bridge?.snapshot || null;
     const { message, modal } = App.useApp();
+    const effectiveConfig = useEffectiveConfig();
+    const updateConfig = useConfigStore((state) => state.updateConfig);
+    const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const { width, url, token, connected, enabled, prompt, attachments, sending, waiting, messages, eventLogs, threads, activeThreadId, workspacePath, loadingThreads, activeTab, confirmTools, activity, connectError, pendingTool, composerFocusId, setAgentState, addMessage: pushMessage, addEventLog: pushEventLog, clearEventLogs } = useCanvasAgentStore();
     const { refinePrompt, refining } = usePromptRefinement("agent", (nextPrompt) => setAgentState({ prompt: nextPrompt, composerFocusId: Date.now() }));
     const [resizing, setResizing] = useState(false);
@@ -568,6 +573,11 @@ export function CanvasLocalAgentPanel({ snapshot: snapshotProp, canUndoOps = fal
                             <>
                                 <Tooltip title="AI 润色">
                                     <Button type="text" shape="circle" className="!h-9 !w-9 !min-w-9" disabled={!connected || !prompt.trim() || refining || sending || waiting} loading={refining} style={{ color: theme.node.muted }} icon={<WandSparkles className="size-4" />} onClick={() => void refinePrompt(prompt)} aria-label="AI 润色" />
+                                </Tooltip>
+                                <Tooltip title="AI 润色使用的文本模型">
+                                    <span className="min-w-0 max-w-[172px]">
+                                        <ModelPicker config={effectiveConfig} value={effectiveConfig.textModel} onChange={(model) => updateConfig("textModel", model)} capability="text" placeholder="选择润色模型" className="!h-9 !min-w-[8rem] !max-w-full" onMissingConfig={() => openConfigDialog(true)} />
+                                    </span>
                                 </Tooltip>
                                 {attachments.length ? <span className="text-[11px]" style={{ color: theme.node.muted }}>{formatBytes(attachmentPayloadBytes(attachments))} / 30MB</span> : null}
                             </>
