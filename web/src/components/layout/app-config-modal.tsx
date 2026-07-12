@@ -88,11 +88,14 @@ export function AppConfigModal() {
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
-    const modelOptionsForGroup = (group: ModelGroup) =>
-        uniqueModels([...config[group.modelsKey], ...filterModelsByCapability(config.models, group.capability)]).map((model) => ({
+    const modelOptionsForGroup = (group: ModelGroup) => {
+        const configuredModels = group.capability === "text" ? featuredTextModels(config[group.modelsKey]) : config[group.modelsKey];
+        const availableModels = group.capability === "text" ? featuredTextModels(config.models) : filterModelsByCapability(config.models, group.capability);
+        return uniqueModels([...configuredModels, ...availableModels]).map((model) => ({
             label: modelOptionLabel(config, model),
             value: model,
         }));
+    };
     const webdavReady = Boolean(webdav.url.trim());
 
     const saveConfig = (nextConfig: AiConfig) => {
@@ -171,7 +174,8 @@ export function AppConfigModal() {
 
     const updateCapabilityModels = (group: ModelGroup, models: string[] | string) => {
         const values = Array.isArray(models) ? models : [models];
-        const next = uniqueModels(values.map((model) => normalizeModelOptionValue(model, config.channels)).filter(Boolean));
+        const normalized = uniqueModels(values.map((model) => normalizeModelOptionValue(model, config.channels)).filter(Boolean));
+        const next = group.capability === "text" ? featuredTextModels(normalized) : normalized;
         updateConfig(group.modelsKey, next);
         if (!next.includes(config[group.modelKey])) updateConfig(group.modelKey, next[0] || "");
     };
